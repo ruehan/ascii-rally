@@ -154,4 +154,17 @@ for (const id of ['forest', 'town', 'valley']) {
   console.log(`  24H lap ${route.length.toFixed(0)} m in ${t.toFixed(0)} s`);
 }
 
+// The ASCII map reads the world correctly.
+{
+  const { buildMapGrid, MAP_CLASSES } = await import(root + '/src/ui/mapGrid.js');
+  const g = buildMapGrid({ terrain: T, surfaces: S, colliders: w.colliders, cellX: 4, waterLevel: map.waterLevel });
+  const at = (x, z) => MAP_CLASSES[g.classAt(...g.toCell(x, z).map(Math.floor))].id;
+  assert.equal(at(0, -190), 'sea', 'north edge is sea');
+  assert.equal(at(...map.zones.find(z => z.id === 'paddock').pos), 'pad');
+  assert.equal(at(18, -80), 'asphalt', 'circuit main straight');
+  const count = id => g.cls.filter(k => MAP_CLASSES[k].id === id).length;
+  assert.ok(count('tree') > 200, `forest shows up (${count('tree')} tree cells)`);
+  assert.ok(count('building') > 30, `town shows up (${count('building')} building cells)`);
+}
+
 console.log('all world tests passed');

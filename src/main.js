@@ -19,6 +19,8 @@ import { createAudio } from './fx/audio.js';
 import { createLoop24 } from './game/loop24.js';
 import { sampleTime } from './render/timeOfDay.js';
 import { milestones } from './content/content.js';
+import { buildMapGrid } from './ui/mapGrid.js';
+import { createMapUI } from './ui/map.js';
 
 // --- Renderer -------------------------------------------------------------
 const renderer = new THREE.WebGLRenderer({ antialias: false });
@@ -95,10 +97,10 @@ input.onPress('KeyG', () => ascii.toggleEdges());
 input.onPress(['Equal', 'NumpadAdd'], () => ascii.setCellSize(Math.min(24, ascii.cellSize + 2)));
 input.onPress(['Minus', 'NumpadSubtract'], () => ascii.setCellSize(Math.max(6, ascii.cellSize - 2)));
 input.onPress('KeyR', () => { ui.close(); respawn(world.spawn); });
-input.onPress('KeyE', () => { if (!ui.close()) zones.open(); });
-input.onPress('Escape', () => ui.close());
+input.onPress('KeyE', () => { if (!mapUI.isOpen && !ui.close()) zones.open(); });
+input.onPress('Escape', () => { if (!mapUI.close()) ui.close(); });
 input.onPress('KeyV', () => ui.note(`> camera: ${rig.toggleMode()}`));
-input.onPress('KeyM', () => ui.note(`> sound: ${audio.toggleMute() ? 'off' : 'on'}`));
+input.onPress('KeyN', () => ui.note(`> sound: ${audio.toggleMute() ? 'off' : 'on'}`));
 input.onPress('KeyT', () => {
   if (loop24.state === 'running') return ui.note('> 24H running — the clock is the race');
   preset = (preset + 1) % PRESETS.length;
@@ -145,6 +147,40 @@ function navNote(nav, dt) {
   const clock = Math.round(rel / 30) % 12 || 12;
   ui.note(`> ${nav.name} · ${Math.round(nav.dist)}m · ${clock} o'clock`);
 }
+
+// --- Map + fast travel -------------------------------------------------------------
+const gridArgs = { terrain, surfaces, colliders: world.colliders, waterLevel: world.waterLevel };
+const along = p => Math.atan2(-p.tx, -p.tz); // car heading that faces along a path tangent
+const gateP = loop24.startPoint;
+const gate = { x: gateP.x - gateP.tx * 12, z: gateP.z - gateP.tz * 12, heading: along(gateP) }; // just before the line
+const zonePos = id => map.zones.find(z => z.id === id);
+const destinations = [
+  { key: '1', label: 'paddock', x: world.spawn.pos[0], z: world.spawn.pos[1], heading: world.spawn.heading },
+  ...stages.stages.map((st, i) => ({
+    key: String(i + 2), label: `${st.name} ${st.trail.id}`, x: st.start.x, z: st.start.z, heading: along(st.start),
+  })),
+  { key: '8', label: '24H gate', ...gate },
+  { key: '9', label: 'rally hq', x: zonePos('piazza').pos[0], z: zonePos('piazza').pos[1], heading: 0 },
+  { key: '0', label: 'lookout', x: zonePos('lookout').pos[0], z: zonePos('lookout').pos[1], heading: 0 },
+  { label: 'garage', x: zonePos('garage').pos[0], z: zonePos('garage').pos[1], heading: 0 },
+  { label: 'pit wall', x: zonePos('pitwall').pos[0], z: zonePos('pitwall').pos[1], heading: 0 },
+];
+const mapUI = createMapUI({
+  fine: buildMapGrid({ ...gridArgs, cellX: 2 }),
+  coarse: buildMapGrid({ ...gridArgs, cellX: 4 }),
+  destinations,
+  onTravel: d => {
+    ui.close();
+    respawn({ pos: [d.x, d.z], heading: d.heading });
+    ui.note(`> travelled to ${d.label}`);
+  },
+  onOpenChange: open => {
+    if (open) ui.close();
+    input.enabled = !open;
+  },
+});
+input.onPress('KeyM', () => mapUI.toggle());
+for (let i = 0; i <= 9; i++) input.onPress(`Digit${i}`, () => mapUI.pressKey(String(i)));
 
 // --- Resize ---------------------------------------------------------------
 function resize() {
@@ -221,6 +257,7 @@ const loop = createLoop({
     const nav = nextTarget();
     navNote(nav, dt);
     ui.update({ vehicle, place: place(), zone: zones.current, nav, viewYaw: rig.yaw, loop: loop24, dt });
+    mapUI.update(dt, vehicle);
   },
 });
 
