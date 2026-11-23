@@ -43,12 +43,40 @@ export class CarView {
     setCharset(this.object, CHARSET.CAR);
     this.object.rotation.order = 'YXZ'; // heading, then pitch, then roll
     scene.add(this.object);
+
+    // Body squash on landing: a damped spring on the body's vertical scale.
+    this.body = [body, cabin, light];
+    this.squash = 0;
+    this.squashV = 0;
+  }
+
+  /** Squash the body (landings). */
+  bump(amount) {
+    this.squashV -= Math.min(4, amount * 0.35);
+  }
+
+  /** World positions of the rear wheel contact points. */
+  rearWheels(out = [[0, 0, 0], [0, 0, 0]]) {
+    const o = this.object;
+    const c = Math.cos(o.rotation.y), sn = Math.sin(o.rotation.y);
+    [[-0.95, 1.05], [0.95, 1.05]].forEach(([lx, lz], i) => {
+      out[i][0] = o.position.x + lx * c + lz * sn;
+      out[i][1] = o.position.y;
+      out[i][2] = o.position.z - lx * sn + lz * c;
+    });
+    return out;
   }
 
   sync(v, alpha, dt) {
     const lerp = (a, b) => a + (b - a) * alpha;
     this.object.position.set(lerp(v.prevX, v.x), lerp(v.prevY, v.y), lerp(v.prevZ, v.z));
     this.object.rotation.set(lerp(v.prevPitch, v.pitch), lerp(v.prevHeading, v.heading), -lerp(v.prevRoll, v.roll));
+
+    // Spring back from squash.
+    this.squashV += (-120 * this.squash - 12 * this.squashV) * dt;
+    this.squash += this.squashV * dt;
+    const sy = Math.max(0.6, 1 + this.squash);
+    for (const b of this.body) b.scale.y = sy;
 
     const spin = (v.speed * dt) / WHEEL_RADIUS;
     for (const w of this.wheels) {

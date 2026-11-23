@@ -14,6 +14,8 @@ import { createBus } from './core/events.js';
 import { createZoneSystem } from './game/zones.js';
 import { createStageSystem } from './game/stages.js';
 import { createUI } from './ui/ui.js';
+import { createParticles } from './fx/particles.js';
+import { createAudio } from './fx/audio.js';
 
 // --- Renderer -------------------------------------------------------------
 const renderer = new THREE.WebGLRenderer({ antialias: false });
@@ -50,10 +52,25 @@ const zones = createZoneSystem({ zones: map.zones, bus });
 const stages = createStageSystem({ stages: map.stages, trails: terrain.trails, bus });
 const input = createInput();
 const ui = createUI({ bus, stages, onPanel: open => { input.enabled = !open; } });
+const particles = createParticles(scene);
+const audio = createAudio();
+const wheels = [[0, 0, 0], [0, 0, 0]];
+
+// Audio may only start after a user gesture.
+const unlockAudio = () => audio.unlock();
+window.addEventListener('keydown', unlockAudio, { once: true });
+window.addEventListener('pointerdown', unlockAudio, { once: true });
+
+bus.on('stage:count', () => audio.beep());
+bus.on('stage:go', () => audio.beep(true));
 
 // Respawn point: last place the car was settled on a road, refreshed every second.
 const safe = { pos: [...world.spawn.pos], heading: world.spawn.heading, timer: 0 };
 function respawn(at = safe) {
+  if (at === safe) { // fell in the sea
+    particles.splash(vehicle.x, world.waterLevel, vehicle.z);
+    audio.splash();
+  }
   stages.abort();
   physics.resetVehicle(vehicle, at.pos, at.heading);
   car.sync(vehicle, 1, 0);
@@ -69,6 +86,7 @@ input.onPress('KeyR', () => { ui.close(); respawn(world.spawn); });
 input.onPress('KeyE', () => { if (!ui.close()) zones.open(); });
 input.onPress('Escape', () => ui.close());
 input.onPress('KeyV', () => ui.note(`> camera: ${rig.toggleMode()}`));
+input.onPress('KeyM', () => ui.note(`> sound: ${audio.toggleMute() ? 'off' : 'on'}`));
 
 // --- Where am I / where next -------------------------------------------------
 function place() {
@@ -132,6 +150,19 @@ const loop = createLoop({
     zones.update(h, vehicle);
     stages.update(h, vehicle);
 
+    // Impacts: camera kick, body squash, dust, thump.
+    if (vehicle.landed > 3) {
+      rig.shake(vehicle.landed * 0.05);
+      car.bump(vehicle.landed);
+      audio.land(vehicle.landed);
+      particles.burst(vehicle.x, vehicle.y, vehicle.z, Math.min(30, Math.round(vehicle.landed * 3)));
+    }
+    if (vehicle.hit > 2) {
+      rig.shake(vehicle.hit * 0.04);
+      audio.hit(vehicle.hit);
+      particles.burst(vehicle.x, vehicle.y, vehicle.z, 8, { color: '#9aa3ad', speed: 3, size: 0.5 });
+    }
+
     // Fell into the sea: back to the last safe spot.
     if (vehicle.y < world.waterLevel - 0.3) respawn();
     safe.timer += h;
@@ -144,6 +175,9 @@ const loop = createLoop({
   render(alpha, dt) {
     car.sync(vehicle, alpha, dt);
     rig.update(dt, car.object, vehicle);
+    particles.drive(dt, car.rearWheels(wheels), vehicle);
+    particles.update(dt);
+    audio.update(dt, vehicle, (devIntents ?? readIntents(input.state)).throttle);
     lighting.follow(rig.target); // shadows stay sharp around the car
 
     camera.updateMatrixWorld();

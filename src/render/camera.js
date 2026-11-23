@@ -24,6 +24,7 @@ export function createCameraRig(camera, terrain) {
   let yaw = 0;            // camera yaw, car-heading convention (0 = looking north)
   let groundY = null;
   let lift = 0;
+  let shake = 0;           // metres, decays
 
   function update(dt, car, vehicle) {
     const m = MODES[mode];
@@ -59,6 +60,11 @@ export function createCameraRig(camera, terrain) {
     goal.set(target.x + bx * (1 - lift * 0.03), target.y + m.height + lift, target.z + bz * (1 - lift * 0.03));
     camera.position.lerp(goal, 1 - Math.exp(-dt * 5));
     camera.lookAt(target.x, target.y + 0.8, target.z);
+    if (shake > 0.01) {
+      camera.position.x += (Math.random() - 0.5) * shake;
+      camera.position.y += (Math.random() - 0.5) * shake;
+      shake *= Math.exp(-dt * 9);
+    }
   }
 
   function snap(car, vehicle) {
@@ -75,6 +81,8 @@ export function createCameraRig(camera, terrain) {
     update,
     snap,
     target,
+    /** Kick the camera (landings, crashes). */
+    shake(amount) { shake = Math.min(1.2, shake + amount); },
     toggleMode() { mode = mode === 'chase' ? 'top' : 'chase'; return mode; },
     get mode() { return mode; },
     /** Direction the camera looks (car-heading convention), for the UI. */

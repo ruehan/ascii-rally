@@ -54,7 +54,7 @@ export function createUI({ bus, stages, onPanel }) {
   const help = el('ui-help');
   const panel = el('ui-panel');
   panel.hidden = true;
-  help.textContent = 'WASD/방향키 운전 · E 열기 · Esc 닫기 · R 출발점\nV 카메라 · C 컬러 · G 윤곽선 · +/- 글자 크기';
+  help.textContent = 'WASD/방향키 운전 · E 열기 · Esc 닫기 · R 출발점\nV 카메라 · M 소리 · C 컬러 · G 윤곽선 · +/- 글자 크기';
 
   let noteLines = [];
   let lastSplit = null;

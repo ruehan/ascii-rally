@@ -1,0 +1,139 @@
+/**
+ * Synthesised car audio (no sample files):
+ *   engine — saw + square through a low-pass, pitch from fake gears/rpm
+ *   tyres  — filtered noise, colour depends on the surface
+ *   one-shots — landing thump, impact, countdown beeps
+ *
+ * Browsers only allow audio after a user gesture, so call `unlock()` from
+ * the first key/pointer event. Everything is a no-op until then.
+ */
+const GEARS = [0, 4.5, 8, 11.5, 15, 19]; // m/s where each gear starts
+const IDLE_RPM = 900;
+const MAX_RPM = 6800;
+
+const SURFACE_NOISE = {
+  //          filter type    freq   Q    gain per m/s
+  gravel:  ['bandpass', 2600, 0.8, 0.010],
+  dirt:    ['bandpass', 1400, 0.7, 0.010],
+  grass:   ['lowpass', 700, 0.7, 0.008],
+  sand:    ['lowpass', 900, 0.7, 0.010],
+  cobble:  ['bandpass', 520, 1.2, 0.012],
+  asphalt: ['lowpass', 380, 0.7, 0.004],
+  kerb:    ['bandpass', 300, 2, 0.012],
+  pad:     ['lowpass', 450, 0.7, 0.004],
+};
+
+export function createAudio() {
+  let ctx = null;
+  let master, engineGain, engineFilter, osc1, osc2, noiseGain, noiseFilter, cobbleLfo, cobbleDepth;
+  let muted = false;
+  let rpm = IDLE_RPM;
+
+  function build() {
+    ctx = new (window.AudioContext || window.webkitAudioContext)();
+    master = ctx.createGain();
+    master.gain.value = muted ? 0 : 0.35;
+    master.connect(ctx.destination);
+
+    // Engine.
+    engineFilter = ctx.createBiquadFilter();
+    engineFilter.type = 'lowpass';
+    engineFilter.Q.value = 4;
+    engineGain = ctx.createGain();
+    engineGain.gain.value = 0;
+    osc1 = ctx.createOscillator();
+    osc1.type = 'sawtooth';
+    osc2 = ctx.createOscillator();
+    osc2.type = 'square';
+    const o2g = ctx.createGain();
+    o2g.gain.value = 0.5;
+    osc1.connect(engineFilter);
+    osc2.connect(o2g).connect(engineFilter);
+    engineFilter.connect(engineGain).connect(master);
+    osc1.start();
+    osc2.start();
+
+    // Tyre noise: looping white noise through a surface-dependent filter.
+    const buf = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+    const noise = ctx.createBufferSource();
+    noise.buffer = buf;
+    noise.loop = true;
+    noiseFilter = ctx.createBiquadFilter();
+    noiseGain = ctx.createGain();
+    noiseGain.gain.value = 0;
+    // Cobble rumble: tremolo on the tyre noise.
+    cobbleLfo = ctx.createOscillator();
+    cobbleLfo.frequency.value = 14;
+    cobbleDepth = ctx.createGain();
+    cobbleDepth.gain.value = 0;
+    cobbleLfo.connect(cobbleDepth).connect(noiseGain.gain);
+    cobbleLfo.start();
+    noise.connect(noiseFilter).connect(noiseGain).connect(master);
+    noise.start();
+  }
+
+  const ramp = (param, value, t = 0.08) => param.setTargetAtTime(value, ctx.currentTime, t);
+
+  function oneShot(type, f0, f1, dur, gain) {
+    if (!ctx || muted) return;
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = type;
+    o.frequency.setValueAtTime(f0, ctx.currentTime);
+    o.frequency.exponentialRampToValueAtTime(f1, ctx.currentTime + dur);
+    g.gain.setValueAtTime(gain, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+    o.connect(g).connect(master);
+    o.start();
+    o.stop(ctx.currentTime + dur + 0.05);
+  }
+
+  return {
+    unlock() {
+      if (!ctx) build();
+      if (ctx.state === 'suspended') ctx.resume();
+    },
+
+    toggleMute() {
+      muted = !muted;
+      if (ctx) ramp(master.gain, muted ? 0 : 0.35, 0.05);
+      return muted;
+    },
+
+    /** Call every frame. throttle 0..1. */
+    update(dt, v, throttle) {
+      if (!ctx) return;
+      const speed = Math.abs(v.speed);
+      let gear = 1;
+      while (gear < GEARS.length - 1 && speed > GEARS[gear + 1]) gear++;
+      const lo = GEARS[gear], hi = GEARS[gear + 1] ?? lo + 4;
+      let target = IDLE_RPM + ((speed - lo) / (hi - lo)) * (MAX_RPM - 2600) + 1800 * (gear > 1 ? 1 : speed / hi);
+      if (speed < 0.5) target = IDLE_RPM + throttle * 2500;           // revving on the spot
+      if (v.airborne) target += 1500 * throttle;                       // wheels spin free
+      target = Math.min(MAX_RPM, target);
+      rpm += (target - rpm) * Math.min(1, dt * 8);
+
+      const f = rpm / 30; // 4-cylinder firing frequency
+      ramp(osc1.frequency, f, 0.03);
+      ramp(osc2.frequency, f / 2, 0.03);
+      ramp(engineFilter.frequency, 500 + throttle * 1800 + rpm * 0.15, 0.05);
+      ramp(engineGain.gain, 0.10 + throttle * 0.16, 0.08);
+
+      const [type, freq, q, k] = SURFACE_NOISE[v.surface] ?? SURFACE_NOISE.grass;
+      if (noiseFilter.type !== type) noiseFilter.type = type;
+      ramp(noiseFilter.frequency, freq, 0.1);
+      noiseFilter.Q.value = q;
+      const tyres = v.airborne ? 0 : Math.min(0.35, speed * k * 2);
+      ramp(noiseGain.gain, tyres, 0.08);
+      cobbleDepth.gain.value = v.surface === 'cobble' ? tyres * 0.8 : 0;
+      cobbleLfo.frequency.value = 6 + speed * 1.2;
+    },
+
+    land(impact) { oneShot('sine', 110, 38, 0.3, Math.min(0.9, impact / 10)); },
+    hit(amount) { oneShot('triangle', 160, 50, 0.18, Math.min(0.8, amount / 12)); },
+    splash() { oneShot('sine', 600, 120, 0.5, 0.25); },
+    beep(go = false) { oneShot('square', go ? 1320 : 660, go ? 1320 : 660, go ? 0.45 : 0.18, 0.12); },
+  };
+}

@@ -34,6 +34,8 @@ export const FLAT_TERRAIN = {
  *
  * Vehicle state: x, z, y, heading (0 = facing -Z), speed, steer, vy, pitch,
  * roll, airborne, surface; prev* copies for render interpolation.
+ * One-step event fields (reset every step): landed (impact speed, m/s, 0 if
+ * none) and hit (speed lost against an obstacle, 0 if none).
  */
 export class ArcadePhysics {
   constructor({ bounds, terrain = FLAT_TERRAIN, gravity = 14 } = {}) {
@@ -55,7 +57,7 @@ export class ArcadePhysics {
     const v = {
       ...DEFAULT_VEHICLE, ...opts,
       x: 0, z: 0, y: 0, heading: 0, speed: 0, steer: 0,
-      vy: 0, pitch: 0, roll: 0, airborne: false, airTime: 0, surface: null,
+      vy: 0, pitch: 0, roll: 0, airborne: false, airTime: 0, surface: null, landed: 0, hit: 0,
       intents: { throttle: 0, brake: 0, steer: 0 },
     };
     this.resetVehicle(v, pos, heading);
@@ -107,6 +109,8 @@ export class ArcadePhysics {
 
   _stepVehicle(v, dt) {
     this._snapshot(v);
+    v.landed = 0;
+    v.hit = 0;
     const { throttle, brake, steer } = v.intents;
     const T = this.terrain;
     // Brief hops over bumps keep full control; real jumps reduce it.
@@ -151,7 +155,10 @@ export class ArcadePhysics {
       const vz = -Math.cos(v.heading) * v.speed;
       if (vx * c.nx + vz * c.nz < 0) hit = true;
     }
-    if (hit) v.speed *= -0.3;
+    if (hit) {
+      v.hit = Math.abs(v.speed) * 1.3;
+      v.speed *= -0.3;
+    }
 
     this._clampBounds(v);
     this._stepVertical(v, dt);
@@ -167,6 +174,7 @@ export class ArcadePhysics {
       v.pitch += (-0.12 - v.pitch) * Math.min(1, dt * 2); // nose drops slowly in the air
       v.roll += (0 - v.roll) * Math.min(1, dt * 2);
       if (v.y <= g.h) {
+        v.landed = -v.vy;
         if (v.vy < -8) v.speed *= 0.75; // hard landing
         v.y = g.h;
         v.vy = 0;
