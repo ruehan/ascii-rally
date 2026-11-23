@@ -2,11 +2,14 @@ import * as THREE from 'three';
 
 /**
  * Collects static props and emits one InstancedMesh per
- * (geometry, material, charset) group — one draw call per group.
+ * (geometry, material, charset, area) group. Splitting by area (default
+ * 200 m squares) gives each mesh a tight bounding sphere so off-screen
+ * props are frustum-culled in every pass.
  */
 export class Instancer {
-  constructor() {
+  constructor({ area = 200 } = {}) {
     this.groups = new Map();
+    this.area = area;
   }
 
   /**
@@ -17,7 +20,8 @@ export class Instancer {
    * @param {{castShadow?: boolean, receiveShadow?: boolean}} [opts]
    */
   add(geometry, material, charset, matrix, { castShadow = true, receiveShadow = true } = {}) {
-    const key = `${geometry.uuid}|${material.uuid}|${charset}|${castShadow}|${receiveShadow}`;
+    const ax = Math.floor(matrix.elements[12] / this.area), az = Math.floor(matrix.elements[14] / this.area);
+    const key = `${geometry.uuid}|${material.uuid}|${charset}|${castShadow}|${receiveShadow}|${ax},${az}`;
     let g = this.groups.get(key);
     if (!g) {
       g = { geometry, material, charset, castShadow, receiveShadow, matrices: [] };
