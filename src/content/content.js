@@ -45,6 +45,9 @@ export const projects = {
     summary: ['TODO: one or two sentences about what it is and why it matters.'],
     links: [],
   },
+  p4: { title: 'TODO project four', year: 'TODO', role: 'TODO', stack: 'TODO', summary: ['TODO'], links: [] },
+  p5: { title: 'TODO project five', year: 'TODO', role: 'TODO', stack: 'TODO', summary: ['TODO'], links: [] },
+  p6: { title: 'TODO project six', year: 'TODO', role: 'TODO', stack: 'TODO', summary: ['TODO'], links: [] },
 };
 
 /**
@@ -70,6 +73,7 @@ export const panels = {
       { h: 'SPECIAL STAGES = PROJECTS' },
       'Stop in a start box, wait for 3-2-1, drive to the finish.',
       'SS1 forest (gravel) · SS2 old town (cobbles) · SS3 coast (tarmac)',
+      'SS4 east road at night (dirt) · SS5 valley hillclimb · SS6 circuit lap',
       { h: '24H = CAREER' },
       'Drive north through the 24H gate: valley → coast → east road → home.',
       'The clock runs from afternoon through the night; milestones line the way.',

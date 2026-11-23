@@ -110,6 +110,7 @@ function place() {
   const z = zones.current;
   if (z) return z.path;
   const { x, z: zz } = vehicle;
+  if (x > 10 && x < 82 && zz < -32 && zz > -124) return '~/circuit';
   if (zz < -110) return '~/coast';
   if (x < -20) return '~/forest';
   if (x > 30 && zz < 100) return '~/old-town';

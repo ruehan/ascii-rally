@@ -25,6 +25,23 @@ export const SURFACE_PHYSICS = {
   sand:    { grip: 0.6,  drag: 3.6 },
 };
 
+/** Per-segment flag: does the path turn noticeably around this segment? */
+function bends(path, closed) {
+  const n = path.length;
+  const yaw = i => {
+    const a = path[(i + n) % n], b = path[(i + 1 + n) % n];
+    return Math.atan2(b[0] - a[0], b[1] - a[1]);
+  };
+  const out = [];
+  for (let i = 0; i < n - 1; i++) {
+    const lo = closed ? i - 4 : Math.max(0, i - 4);
+    const hi = closed ? i + 4 : Math.min(n - 2, i + 4);
+    const d = Math.atan2(Math.sin(yaw(hi) - yaw(lo)), Math.cos(yaw(hi) - yaw(lo)));
+    out.push(Math.abs(d) > 0.35); // > ~20° over ~16 m
+  }
+  return out;
+}
+
 export function createSurfaces({ size = 400, res = 0.5, trails = [], pads = [] }) {
   const n = Math.round(size / res);
   const origin = -size / 2;
@@ -32,6 +49,7 @@ export function createSurfaces({ size = 400, res = 0.5, trails = [], pads = [] }
   const sdf = new Uint8Array(n * n);   // 0 = far outside
   const inside = new Float32Array(n * n).fill(-SDF_RANGE); // best (halfWidth - dist)
 
+  const kerbCandidates = [];
   const stamp = (k, value, id) => {
     if (value > inside[k]) {
       inside[k] = value;
@@ -44,9 +62,12 @@ export function createSurfaces({ size = 400, res = 0.5, trails = [], pads = [] }
     const path = t.path ?? smoothPath(t.points, 1, t.closed);
     const half = (t.width ?? 6) / 2;
     const R = half + SDF_RANGE;
+    // Kerbs: a 1.2 m strip along both edges wherever the road bends.
+    const bend = t.kerbs ? bends(path, t.closed) : null;
     for (let i = 0; i < path.length - 1; i++) {
       const [ax, az] = path[i];
       const [bx, bz] = path[i + 1];
+      const kerb = bend && bend[i];
       const x0 = Math.max(0, Math.floor((Math.min(ax, bx) - R - origin) / res));
       const x1 = Math.min(n - 1, Math.ceil((Math.max(ax, bx) + R - origin) / res));
       const z0 = Math.max(0, Math.floor((Math.min(az, bz) - R - origin) / res));
@@ -56,10 +77,18 @@ export function createSurfaces({ size = 400, res = 0.5, trails = [], pads = [] }
         for (let ix = x0; ix <= x1; ix++) {
           const px = origin + (ix + 0.5) * res;
           const [d] = segmentDistance(px, pz, ax, az, bx, bz);
-          if (d <= R) stamp(iz * n + ix, half - d, id);
+          if (d > R) continue;
+          stamp(iz * n + ix, half - d, id);
+          if (kerb && d <= half && d > half - 1.2) kerbCandidates.push(iz * n + ix);
         }
       }
     }
+  }
+
+  // Kerb only where the texel really ends up within 1.2 m of the road edge
+  // (inside corners, a segment's edge strip can lie mid-road for its neighbour).
+  for (const k of kerbCandidates) {
+    if (inside[k] >= 0 && inside[k] < 1.2 && ids[k] === SURFACE_IDS.asphalt) ids[k] = SURFACE_IDS.kerb;
   }
 
   for (const p of pads) {

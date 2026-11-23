@@ -41,6 +41,8 @@ export default {
 
       // Valley undulation.
       { type: 'hill', pos: [30, -60], r: 30, height: 4 },
+      // Circuit: one big flat apron.
+      { type: 'pad', pos: [46, -76], r: 40, falloff: 10 },
       { type: 'hill', pos: [150, 120], r: 35, height: 6 },
 
       // Coast: cliff above the sea in the north. Coves + a headland at x≈-125.
@@ -88,6 +90,16 @@ export default {
         [90, 135], [55, 140], [22, 124]],
     },
     {
+      // Circuit (F1-style, clockwise): main straight north, hairpin, chicane, sweeper.
+      id: 'circuit', surface: 'asphalt', width: 10, shoulder: 4, smooth: 30, closed: true, kerbs: true,
+      points: [[18, -46], [18, -104], [26, -114], [40, -114], [46, -104], [42, -92], [50, -86],
+        [64, -92], [74, -82], [74, -64], [64, -52], [54, -58], [46, -50], [36, -40], [24, -38]],
+    },
+    {
+      id: 'circuit-access', surface: 'asphalt', width: 6, shoulder: 3, smooth: 10,
+      points: [[3, -64], [9, -62], [13, -60]],
+    },
+    {
       id: 'lookout', surface: 'gravel', width: 5, shoulder: 3, smooth: 6,
       points: [[-119, -155], [-121, -158], [-122, -160]],
     },
@@ -109,6 +121,9 @@ export default {
     { id: 'ss1', name: 'SS1', trail: 'forest', from: 25, to: 265, splits: [100, 185], project: 'p1', hue: '#ffd166', target: 24 },
     { id: 'ss2', name: 'SS2', trail: 'town', from: 40, to: 305, splits: [120, 220], project: 'p2', hue: '#ff6b6b', target: 28 },
     { id: 'ss3', name: 'SS3', trail: 'coast', from: 222, to: 395, splits: [280, 340], project: 'p3', hue: '#4dabf7', target: 15 },
+    { id: 'ss4', name: 'SS4', trail: 'east', from: 20, to: 340, splits: [120, 230], project: 'p4', hue: '#c77dff', target: 33 },
+    { id: 'ss5', name: 'SS5', trail: 'valley', from: 40, to: 230, splits: [100, 165], project: 'p5', hue: '#5dff8a', target: 17 },
+    { id: 'ss6', name: 'SS6', trail: 'circuit', from: 6, to: 241, splits: [85, 165], project: 'p6', hue: '#ff9a3c', target: 19 },
   ],
 
   // 24H loop: a route stitched from existing roads (clockwise). Driving it

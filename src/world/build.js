@@ -341,6 +341,33 @@ export function buildWorld(scene, map) {
     }
   }
 
+  // --- Circuit: grandstand on the infield, tyre wall at the hairpin ------------------
+  if (trail('circuit')) {
+    const rand = rng(51);
+    // Grandstand facing the main straight (x≈18), 3 tiers with a crowd.
+    const gx = 29, z0 = -92, z1 = -64;
+    const gy = Math.min(h(gx, z0), h(gx, z1), h(gx + 6, z0), h(gx + 6, z1));
+    for (let tier = 0; tier < 3; tier++) {
+      const x = gx + tier * 2, top = 0.8 + tier * 1.1;
+      put(G.block(), '#c9ced6', CHARSET.WALL, x, gy - 0.3, (z0 + z1) / 2, 2, top + 0.3, z1 - z0, { cut: true });
+      for (let z = z0 + 0.8; z < z1; z += 1.1) {
+        if (rand() < 0.25) continue;
+        const c = ['#ff6b6b', '#ffd166', '#4dabf7', '#5dff8a', '#f4f4f4', '#c77dff'][Math.floor(rand() * 6)];
+        put(G.block(), c, CHARSET.DEFAULT, x - 0.3, gy + top, z + rand() * 0.3, 0.5, 0.9, 0.5, { cut: true, shadow: false });
+      }
+    }
+    put(G.block(), '#2b2b2b', CHARSET.GLYPH, gx + 2, gy + 3.8, (z0 + z1) / 2, 7, 0.3, z1 - z0 + 1, { cut: true }); // roof
+    solid(box(gx + 2, (z0 + z1) / 2, 3.5, (z1 - z0) / 2, 0, 4, gy));
+    // Tyre wall outside the hairpin.
+    for (let x = 14; x <= 48; x += 1.1) {
+      for (let row = 0; row < 3; row++) {
+        const z = -121 - (x > 30 ? (x - 30) * -0.2 : 0);
+        put(G.ring(), row % 2 ? '#f4f4f4' : '#2b2b2b', CHARSET.CAR, x, h(x, z) + 0.15 + row * 0.3, z, 0.5, 0.5, 1.4, { rx: Math.PI / 2, shadow: false });
+      }
+    }
+    solid(box(31, -121, 17, 0.6, 0, 1, h(31, -121)));
+  }
+
   // --- Special stages: start arch + box, split gates, chequered finish -------------
   for (const st of map.stages ?? []) {
     const tr = trail(st.trail);
@@ -432,7 +459,7 @@ export function buildWorld(scene, map) {
         const p = pointAt(east.path, east.cum, d);
         for (const sgn of [-1, 1]) {
           const [x, z] = side(p, (east.width / 2 + 0.8) * sgn);
-          if (surfaces.insideAt(x, z) > -0.3) continue;
+          if (!isClear(x, z, 0.3, 0.3)) continue;
           put(G.block(), '#efefef', CHARSET.WALL, x, h(x, z), z, 0.15, 0.9, 0.15);
           putGlow(x, h(x, z) + 0.75, z, 0.18, 0.15, 0.18, 0);
         }

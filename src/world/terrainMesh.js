@@ -99,7 +99,9 @@ export function createTerrainMesh(terrain, surfaces) {
         uniform vec3 uSurfColor[8];`)
       .replace('#include <color_fragment>', `#include <color_fragment>
         float sid = floor(texture2D(tSurfId, (vWorldXZ - uWorldMin) / uWorldSize).r * 255.0 + 0.5);
-        if (sid > 0.5) diffuseColor.rgb = uSurfColor[int(clamp(sid, 0.0, 7.0))];`);
+        if (sid > 0.5) diffuseColor.rgb = uSurfColor[int(clamp(sid, 0.0, 7.0))];
+        // Kerbs: red/white blocks along the road.
+        if (abs(sid - ${SURFACE_IDS.kerb}.0) < 0.5 && fract((vWorldXZ.x + vWorldXZ.y) * 0.5) < 0.5) diffuseColor.rgb = vec3(0.95);`);
   };
 
   const mesh = new THREE.Mesh(geo, mat);
