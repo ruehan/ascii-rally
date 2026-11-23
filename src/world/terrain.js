@@ -16,6 +16,8 @@ import { smoothPath, cumulative, forEachNear, segmentDistance } from './path.js'
  *   coast  { points, land, cliffTop, cliffWidth, rise, seaDepth, blend:[d0,d1] }
  *          coastline polyline west→east; land on the 'north' (-z, default) or 'south' side
  *   pad    { pos:[x,z], r, y?, falloff }                  flatten (y defaults to local average)
+ *   flat   { polygon, y, falloff }                        flatten a polygon (no noise inside)
+ *   plane  { polygon, origin:[x,z], y, slope:[dx,dz], falloff }  sloped flat plane
  *   trail  { points, width, shoulder, smooth, crests:[{at, length, height}] }
  *          carved road: flat cross-section, smoothed long profile
  * Pads are applied again after trails so zone floors stay exactly level.
@@ -152,6 +154,22 @@ export function createTerrain({ size = 400, cell = 2, seed = 1, base = {}, featu
     }
   }
 
+  // Polygon flats / sloped planes (fast roads sit on these: no noise bumps).
+  for (const f of features.filter(f => f.type === 'flat' || f.type === 'plane')) {
+    const poly = f.polygon;
+    const fall = f.falloff ?? 30;
+    const [ox, oz] = f.origin ?? [0, 0];
+    const [sx, sz] = f.slope ?? [0, 0];
+    const xs = poly.map(p => p[0]), zs = poly.map(p => p[1]);
+    forEachCell(grid, Math.min(...xs) - fall, Math.min(...zs) - fall, Math.max(...xs) + fall, Math.max(...zs) + fall, (k, x, z) => {
+      const d = pointInPolygon(x, z, poly) ? 0 : polygonDistance(x, z, poly);
+      if (d >= fall) return;
+      const target = f.y + (x - ox) * sx + (z - oz) * sz;
+      const w = 1 - smoothstep(0, fall, d);
+      heights[k] += (target - heights[k]) * w;
+    });
+  }
+
   // Pads (first pass, so trails entering them sample the flattened height).
   const pads = byType('pad').map(f => ({ ...f, y: f.y ?? averageAround(sample, f.pos, f.r) }));
   const applyPads = () => {
@@ -250,6 +268,24 @@ export function createTerrain({ size = 400, cell = 2, seed = 1, base = {}, featu
       return (sampleGrid(heights, grid, x + dx * e, z + dz * e) - sampleGrid(heights, grid, x - dx * e, z - dz * e)) / (2 * e);
     },
   };
+}
+
+function pointInPolygon(x, z, poly) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, zi] = poly[i], [xj, zj] = poly[j];
+    if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+function polygonDistance(x, z, poly) {
+  let best = Infinity;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [d] = segmentDistance(x, z, poly[j][0], poly[j][1], poly[i][0], poly[i][1]);
+    if (d < best) best = d;
+  }
+  return best;
 }
 
 function forEachCell({ n, origin, cell }, x0, z0, x1, z1, fn) {

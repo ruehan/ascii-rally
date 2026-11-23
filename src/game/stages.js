@@ -25,8 +25,10 @@ const NOTE_LEAD = 2.5;      // call notes this many seconds ahead
  *   stage:abort     { stage, reason }
  */
 export function createStageSystem({ stages, trails, bus }) {
-  const list = stages.map(cfg => {
-    const trail = trails.find(t => t.id === cfg.trail);
+  const list = stages.map(raw => {
+    const trail = trails.find(t => t.id === raw.trail);
+    // Negative `to` counts back from the trail's end (closed laps).
+    const cfg = { ...raw, to: raw.to < 0 ? trail.length + raw.to : raw.to };
     const start = pointAt(trail.path, trail.cum, cfg.from);
     return {
       ...cfg,

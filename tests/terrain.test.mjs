@@ -117,3 +117,18 @@ console.log('all terrain tests passed');
   }
   console.log('terrain chunk tests passed');
 }
+
+// --- flat / plane polygons ---------------------------------------------------
+{
+  const t = createTerrain({
+    size: 200, cell: 2, seed: 5, base: { height: 2, amp: 3, wavelength: 20 },
+    features: [
+      { type: 'flat', polygon: [[-60, -60], [0, -60], [0, 0], [-60, 0]], y: 7, falloff: 10 },
+      { type: 'plane', polygon: [[20, 20], [80, 20], [80, 80], [20, 80]], origin: [20, 20], y: 3, slope: [0, 0.05], falloff: 10 },
+    ],
+  });
+  for (const [x, z] of [[-50, -50], [-10, -10], [-30, -2]]) near(t.heightAt(x, z), 7, 1e-4, 'flat');
+  near(t.heightAt(50, 20), 3, 1e-4, 'plane origin row');
+  near(t.heightAt(50, 70), 3 + 50 * 0.05, 1e-4, 'plane slope');
+  console.log('flat/plane tests passed');
+}

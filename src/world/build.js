@@ -368,9 +368,60 @@ export function buildWorld(scene, map) {
     solid(box(31, -121, 17, 0.6, 0, 1, h(31, -121)));
   }
 
+  // --- Grand Prix: pit building, grandstand, start gantry, braking boards, tyre walls
+  if (trail('gp')) {
+    const gpt = trail('gp');
+    const rand = rng(71);
+    const y = 6;
+    // Pit building north of the pit lane: one long block with dark garage bays.
+    put(G.block(), '#d9dde3', CHARSET.WALL, 10, y - 0.2, 266, 230, 5.5, 8, { cut: true });
+    solid(box(10, 266, 115, 4, 0, 5.5, y));
+    for (let x = -95; x <= 115; x += 14) put(G.block(), '#1d2733', CHARSET.GLYPH, x, y, 270.05, 9, 3.5, 0.1, { shadow: false });
+    // Grandstand on the infield, facing the main straight.
+    for (let tier = 0; tier < 4; tier++) {
+      const z = 322 + tier * 2, top = 0.8 + tier * 1.1;
+      put(G.block(), '#c9ced6', CHARSET.WALL, -20, y - 0.3, z, 240, top + 0.3, 2, { cut: true });
+      for (let x = -138; x < 98; x += 1.1) {
+        if (rand() < 0.3) continue;
+        const c = ['#ff6b6b', '#ffd166', '#4dabf7', '#5dff8a', '#f4f4f4', '#c77dff'][Math.floor(rand() * 6)];
+        put(G.block(), c, CHARSET.DEFAULT, x, y + top, z - 0.3, 0.5, 0.9, 0.5, { cut: true, shadow: false });
+      }
+    }
+    put(G.block(), '#2b2b2b', CHARSET.GLYPH, -20, y + 5.2, 325, 242, 0.3, 9, { cut: true });
+    solid(box(-20, 325, 121, 4.5, 0, 5, y));
+    // Start gantry over the line: two posts, a beam, five red lights.
+    const p0 = pointAt(gpt.path, gpt.cum, 0);
+    const yaw0 = yawAlong(p0.tx, p0.tz);
+    for (const sgn of [-1, 1]) {
+      const x = p0.x + p0.tz * 9 * sgn, z = p0.z - p0.tx * 9 * sgn;
+      put(G.block(), '#2b2b2b', CHARSET.GLYPH, x, y, z, 0.6, 9, 0.6, { yaw: yaw0, cut: true });
+      solid(circle(x, z, 0.5, 9, y));
+    }
+    put(G.block(), '#2b2b2b', CHARSET.GLYPH, p0.x, y + 8, p0.z, 0.8, 1, 18.6, { yaw: yaw0, cut: true, shadow: false });
+    for (let i = -2; i <= 2; i++) {
+      put(G.block(), '#ff2020', CHARSET.KERB, p0.x + p0.tz * i * 1.6, y + 7.6, p0.z - p0.tx * i * 1.6, 0.9, 0.6, 0.9, { shadow: false });
+    }
+    // Braking boards before T1 (left/outside of the approach): 150 / 100 / 50 m.
+    for (const [d, n] of [[130, 3], [180, 2], [230, 1]]) {
+      const p = pointAt(gpt.path, gpt.cum, d);
+      const off = gpt.width / 2 + 5;
+      const x = p.x + p.tz * off, z = p.z - p.tx * off;
+      put(G.block(), '#f4f4f4', CHARSET.WALL, x, y, z, 0.3, 1.2, 1.4, { yaw: yawAlong(p.tx, p.tz) });
+      for (let k = 0; k < n; k++) put(G.block(), '#1a1a1a', CHARSET.GLYPH, x, y + 0.25 + k * 0.32, z, 0.32, 0.12, 1.2, { yaw: yawAlong(p.tx, p.tz), shadow: false });
+    }
+    // Tyre wall outside T1.
+    for (let z = 296; z <= 350; z += 1.1) {
+      for (let row = 0; row < 3; row++) {
+        put(G.ring(), row % 2 ? '#f4f4f4' : '#2b2b2b', CHARSET.CAR, 352, y + 0.15 + row * 0.3, z, 0.5, 0.5, 1.4, { rx: Math.PI / 2, shadow: false });
+      }
+    }
+    solid(box(352, 323, 0.6, 27, 0, 1, y));
+  }
+
   // --- Special stages: start arch + box, split gates, chequered finish -------------
-  for (const st of map.stages ?? []) {
-    const tr = trail(st.trail);
+  for (const raw of map.stages ?? []) {
+    const tr = trail(raw.trail);
+    const st = { ...raw, to: raw.to < 0 ? tr.length + raw.to : raw.to };
     const at = d => pointAt(tr.path, tr.cum, d);
     const side = (p, off) => [p.x + p.tz * off, p.z - p.tx * off];
     const gate = (d, postColor, beam) => {

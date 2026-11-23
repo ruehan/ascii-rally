@@ -5,12 +5,13 @@
  */
 import world from './regions/world.js';
 import core from './regions/core.js';
+import gp from './regions/gp.js';
 
 /**
  * Regions are concatenated in order. Terrain features apply in type order
  * (see terrain.js), so region order only matters within a type.
  */
-const regions = [world, core];
+const regions = [world, core, gp];
 const all = key => regions.flatMap(r => r[key] ?? []);
 
 export default {

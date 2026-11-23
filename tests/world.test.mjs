@@ -97,8 +97,9 @@ for (const cfg of map.stages) {
     for (const t of ['stage:split', 'stage:finish', 'stage:abort']) bus.on(t, e => events.push([t, e]));
     const stages = createStageSystem({ stages: [cfg], trails: T.trails, bus });
     const trail = T.trails.find(t => t.id === cfg.trail);
+    const resolved = stages.stages[0]; // `to` may be relative to the trail end
     run({
-      path: trail.path, cum: trail.cum, from: cfg.from, to: cfg.to + 20, car, timeout: 200,
+      path: trail.path, cum: trail.cum, from: resolved.from, to: Math.min(trail.length - 1, resolved.to + 20), car, timeout: 200,
       step: (v, dt) => { stages.update(dt, v); return stages.state !== 'running'; },
       done: () => events.some(e => e[0] === 'stage:finish' || e[0] === 'stage:abort'),
     });

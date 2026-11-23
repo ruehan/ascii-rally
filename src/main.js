@@ -130,6 +130,12 @@ function place() {
   const z = zones.current;
   if (z) return z.path;
   const { x, z: zz } = vehicle;
+  // Outer regions first (see src/world/regions/*), then the home valley.
+  if (zz > 235 && x > -290 && x < 370) return '~/grand-prix';
+  if (x < -280 && zz > 180) return '~/desert';
+  if (x < -200 && zz < -250) return '~/snow';
+  if (x < -200) return '~/mountains';
+  if (x > 205) return '~/endurance';
   if (zz < -110) return '~/coast';
   if (x < -20) return '~/forest';
   if (x > 30 && zz < 100) return '~/old-town';
