@@ -7,9 +7,6 @@
  * Browsers only allow audio after a user gesture, so call `unlock()` from
  * the first key/pointer event. Everything is a no-op until then.
  */
-const GEARS = [0, 4.5, 8, 11.5, 15, 19]; // m/s where each gear starts
-const IDLE_RPM = 900;
-const MAX_RPM = 6800;
 
 const SURFACE_NOISE = {
   //          filter type    freq   Q    gain per m/s
@@ -27,7 +24,7 @@ export function createAudio() {
   let ctx = null;
   let master, engineGain, engineFilter, osc1, osc2, noiseGain, noiseFilter, cobbleLfo, cobbleDepth;
   let muted = false;
-  let rpm = IDLE_RPM;
+  let rpm = 1000;
 
   function build() {
     ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -102,20 +99,23 @@ export function createAudio() {
       return muted;
     },
 
-    /** Call every frame. throttle 0..1. */
+    /** Call every frame. throttle 0..1. Engine character comes from v.car.audio. */
     update(dt, v, throttle) {
       if (!ctx) return;
+      const a = v.car.audio;
+      const vmax = v.car.vmax / 3.6;
       const speed = Math.abs(v.speed);
-      let gear = 1;
-      while (gear < GEARS.length - 1 && speed > GEARS[gear + 1]) gear++;
-      const lo = GEARS[gear], hi = GEARS[gear + 1] ?? lo + 4;
-      let target = IDLE_RPM + ((speed - lo) / (hi - lo)) * (MAX_RPM - 2600) + 1800 * (gear > 1 ? 1 : speed / hi);
-      if (speed < 0.5) target = IDLE_RPM + throttle * 2500;           // revving on the spot
-      if (v.airborne) target += 1500 * throttle;                       // wheels spin free
-      target = Math.min(MAX_RPM, target);
-      rpm += (target - rpm) * Math.min(1, dt * 8);
+      // Gears spaced up to top speed; rpm sweeps from ~60% to redline in each.
+      const gearSpan = vmax / a.gears;
+      const gear = Math.min(a.gears - 1, Math.floor(speed / gearSpan));
+      const inGear = (speed - gear * gearSpan) / gearSpan;
+      const low = gear === 0 ? a.idle : a.redline * 0.62;
+      let target = low + (a.redline - low) * inGear;
+      if (speed < 0.5) target = a.idle + throttle * (a.redline - a.idle) * 0.4; // revving on the spot
+      if (v.airborne) target += (a.redline - target) * 0.5 * throttle;          // wheels spin free
+      rpm += (Math.min(a.redline, target) - rpm) * Math.min(1, dt * 8);
 
-      const f = rpm / 30; // 4-cylinder firing frequency
+      const f = (rpm / 60) * (a.cyl / 2); // firing frequency
       ramp(osc1.frequency, f, 0.03);
       ramp(osc2.frequency, f / 2, 0.03);
       ramp(engineFilter.frequency, 500 + throttle * 1800 + rpm * 0.15, 0.05);

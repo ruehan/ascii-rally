@@ -1,65 +1,63 @@
 import * as THREE from 'three';
 import { CHARSET, setCharset } from '../render/charsets.js';
 import { material } from '../world/materials.js';
-
-const WHEEL_RADIUS = 0.42;
-
-function box(w, h, d, color) {
-  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material(color));
-  m.castShadow = true;
-  return m;
-}
+import { buildCarModel } from './models.js';
+import { DEFAULT_CAR } from './cars.js';
 
 /**
  * Car visuals only. Movement lives in the physics adapter; call
  * `sync(vehicle, alpha, dt)` each frame to copy the interpolated state.
+ * `setModel(id)` swaps the body for another car class.
  */
 export class CarView {
-  constructor(scene) {
+  constructor(scene, id = DEFAULT_CAR) {
     this.object = new THREE.Group();
+    this.object.rotation.order = 'YXZ'; // heading, then pitch, then roll
 
-    const body = box(1.8, 0.6, 3.2, '#ff5d5d');
-    body.position.y = 0.7;
-    const cabin = box(1.5, 0.6, 1.6, '#f1f3f5');
-    cabin.position.set(0, 1.3, 0.3);
-    // Lamps get their own emissive material so they can glow at night.
+    // Lamps get their own emissive materials so they can glow at night.
     this.lampMat = new THREE.MeshStandardMaterial({ color: '#fff3b0', emissive: '#fff0c0', emissiveIntensity: 0 });
-    const light = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.2, 0.1), this.lampMat);
-    light.position.set(0, 0.8, -1.65);
     this.tailMat = new THREE.MeshStandardMaterial({ color: '#7a1010', emissive: '#ff2020', emissiveIntensity: 0 });
-    const tail = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.18, 0.08), this.tailMat);
-    tail.position.set(0, 0.85, 1.62);
-    this.object.add(body, cabin, light, tail);
 
     // Headlights: present from the start (adding lights later recompiles
     // every shader); only the intensity changes.
     this.headlight = new THREE.SpotLight('#fff2d0', 0, 42, 0.5, 0.55, 1);
-    this.headlight.position.set(0, 1, -1.6);
     this.headlight.target.position.set(0, -1.5, -16);
     this.object.add(this.headlight, this.headlight.target);
 
-    this.wheels = [];
-    const wheelGeo = new THREE.CylinderGeometry(WHEEL_RADIUS, WHEEL_RADIUS, 0.35, 10);
-    wheelGeo.rotateZ(Math.PI / 2);
-    const wheelMat = material('#2b2b2b');
-    for (const [x, z] of [[-0.95, -1.05], [0.95, -1.05], [-0.95, 1.05], [0.95, 1.05]]) {
-      const pivot = new THREE.Group();
-      pivot.position.set(x, WHEEL_RADIUS, z);
-      const w = new THREE.Mesh(wheelGeo, wheelMat);
-      w.castShadow = true;
-      pivot.add(w);
-      this.object.add(pivot);
-      this.wheels.push({ pivot, mesh: w, front: z < 0 });
-    }
-
-    setCharset(this.object, CHARSET.CAR);
-    this.object.rotation.order = 'YXZ'; // heading, then pitch, then roll
-    scene.add(this.object);
-
-    // Body squash on landing: a damped spring on the body's vertical scale.
-    this.body = [body, cabin, light];
+    this.model = new THREE.Group();
+    this.object.add(this.model);
     this.squash = 0;
     this.squashV = 0;
+    this.setModel(id);
+    scene.add(this.object);
+  }
+
+  setModel(id) {
+    this.id = id;
+    this.model.clear();
+    const m = buildCarModel(id, this.model);
+
+    const lamp = new THREE.Mesh(new THREE.BoxGeometry(m.width, 0.18, 0.08), this.lampMat);
+    lamp.position.set(...m.lamp);
+    const tail = new THREE.Mesh(new THREE.BoxGeometry(Math.max(0.3, m.width), 0.16, 0.08), this.tailMat);
+    tail.position.set(...m.tail);
+    this.model.add(lamp, tail);
+    this.headlight.position.set(m.lamp[0], m.lamp[1] + 0.2, m.lamp[2]);
+
+    this.wheels = [];
+    const wheelMat = material('#2b2b2b');
+    for (const w of m.wheels) {
+      const geo = new THREE.CylinderGeometry(w.r, w.r, w.w, 10).rotateZ(Math.PI / 2);
+      const pivot = new THREE.Group();
+      pivot.position.set(w.x, w.r, w.z);
+      const mesh = new THREE.Mesh(geo, wheelMat);
+      mesh.castShadow = true;
+      pivot.add(mesh);
+      this.model.add(pivot);
+      this.wheels.push({ pivot, mesh, front: w.z < 0, r: w.r, x: w.x, z: w.z });
+    }
+    this.body = [...m.parts, lamp];
+    setCharset(this.model, CHARSET.CAR);
   }
 
   /** 0 = off, 1 = full night lights. */
@@ -78,10 +76,10 @@ export class CarView {
   rearWheels(out = [[0, 0, 0], [0, 0, 0]]) {
     const o = this.object;
     const c = Math.cos(o.rotation.y), sn = Math.sin(o.rotation.y);
-    [[-0.95, 1.05], [0.95, 1.05]].forEach(([lx, lz], i) => {
-      out[i][0] = o.position.x + lx * c + lz * sn;
+    this.wheels.filter(w => !w.front).slice(0, 2).forEach((w, i) => {
+      out[i][0] = o.position.x + w.x * c + w.z * sn;
       out[i][1] = o.position.y;
-      out[i][2] = o.position.z - lx * sn + lz * c;
+      out[i][2] = o.position.z - w.x * sn + w.z * c;
     });
     return out;
   }
@@ -97,9 +95,8 @@ export class CarView {
     const sy = Math.max(0.6, 1 + this.squash);
     for (const b of this.body) b.scale.y = sy;
 
-    const spin = (v.speed * dt) / WHEEL_RADIUS;
     for (const w of this.wheels) {
-      w.mesh.rotation.x -= spin;
+      w.mesh.rotation.x -= (v.speed * dt) / w.r;
       if (w.front) w.pivot.rotation.y = v.steer * 0.5;
     }
   }

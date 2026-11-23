@@ -1,6 +1,7 @@
 import './ui.css';
 import { panels, projects, owner } from '../content/content.js';
 import { leaderboard, formatTime } from '../game/leaderboard.js';
+import { CARS, CAR_ORDER } from '../vehicle/cars.js';
 
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
@@ -30,11 +31,25 @@ function renderLines(lines) {
   return html;
 }
 
-function timesLog(stage, highlight) {
-  const rows = leaderboard.get(stage.id).map(e =>
+function timesLog(stage, car, highlight) {
+  const rows = leaderboard.get(stage.id, car).map(e =>
     `<span class="${e.hash === highlight ? 'me' : ''}">${e.hash}  ${formatTime(e.time)}  ${esc(owner.handle)}  ${e.date}</span>`);
-  rows.push(`<span>target   ${formatTime(stage.target)}  owner</span>`);
+  const target = stage.target?.[car];
+  rows.push(target ? `<span>target   ${formatTime(target)}  owner</span>` : '<span>no owner target for this car</span>');
   return `<div class="log">${rows.join('\n')}</div>`;
+}
+
+/** Garage: car cards with real-world-ish specs; buttons emit car:select. */
+function carCards(current) {
+  return CAR_ORDER.map(id => {
+    const c = CARS[id];
+    const kw = c.power, hp = Math.round(kw * 1.341);
+    return `<div class="car-card${id === current ? ' on' : ''}">
+      <button data-car="${id}">${id === current ? '● ' : '○ '}${esc(c.name)}</button> <span class="k">${esc(c.klass)}</span>
+      <div class="spec">${kw} kW (${hp} hp) · ${c.mass} kg · 0-100 ${c.zeroTo100}s · ${c.vmax} km/h · ${c.drive === 1 ? 'AWD' : 'RWD'} · downforce ${c.cla ? 'ClA ' + c.cla : 'none'}</div>
+      <div class="spec">tyres: tarmac ${c.tyres.asphalt} · gravel ${c.tyres.gravel} · grass ${c.tyres.grass} — ${esc(c.note)}</div>
+    </div>`;
+  }).join('');
 }
 
 const COMPASS_8 = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
@@ -44,7 +59,7 @@ const ARROWS = ['↑', '↗', '→', '↘', '↓', '↙', '←', '↖']; // up =
  * DOM overlay: telemetry bar, navigation arrow, pace-note log, prompt,
  * countdown and the info panel. Listens to the bus; never touches physics.
  */
-export function createUI({ bus, stages, onPanel }) {
+export function createUI({ bus, stages, onPanel, getCar }) {
   const top = el('ui-top');
   const navEl = el('ui-nav');
   const notes = el('ui-notes');
@@ -56,9 +71,10 @@ export function createUI({ bus, stages, onPanel }) {
   let cardTimer = 0;
   const panel = el('ui-panel');
   panel.hidden = true;
-  help.textContent = 'WASD/방향키 운전 · E 열기 · M 지도/빠른 이동 · Esc 닫기 · R 출발점\nV 카메라 · T 시간대 · N 소리 · C 컬러 · G 윤곽선 · +/- 글자 크기';
+  help.textContent = 'WASD/방향키 운전 · Space 핸드브레이크 · Q 차량 · E 열기 · M 지도 · Esc 닫기 · R 출발점\nV 카메라 · T 시간대 · N 소리 · C 컬러 · G 윤곽선 · +/- 글자 크기';
 
   let noteLines = [];
+  const slicksOnDirt = v => Math.abs(v.speed) < 8 && (CARS[getCar()].tyres[v.surface] ?? 1) < 0.55;
   let lastSplit = null;
   let countTimer = 0;
   const visited = new Set();
@@ -85,25 +101,39 @@ export function createUI({ bus, stages, onPanel }) {
 
   function openZone(zone) {
     visited.add(zone.id);
+    const car = getCar();
     if (zone.content === 'hq') {
       const html = stages.stages.map(st => {
         const p = projects[st.project];
-        return `<h3>── ${esc(st.name)} · ${esc(p?.title ?? st.project)} ──</h3>${timesLog(st)}`;
+        return `<h3>── ${esc(st.name)} · ${esc(p?.title ?? st.project)} ──</h3>${timesLog(st, car)}`;
       }).join('');
-      open('$ git log --stages', `<p>Stage times on this browser. Beat the owner's targets.</p>${html}`);
+      open('$ git log --stages', `<p>Stage times on this browser for <b>${esc(CARS[car].name)}</b>. Beat the owner's targets.</p>${html}`);
       return;
     }
     const data = panels[zone.content];
-    if (data) open(data.title, renderLines(data.lines));
+    if (!data) return;
+    if (zone.content === 'skills') {
+      // The garage also hands out cars.
+      open(data.title, `<h3>── CARS ── (Q cycles anywhere)</h3>${carCards(car)}${renderLines(data.lines)}`);
+      panel.querySelectorAll('[data-car]').forEach(b => b.addEventListener('click', () => {
+        bus.emit('car:select', { id: b.dataset.car });
+        openZone(zone);
+      }));
+      return;
+    }
+    open(data.title, renderLines(data.lines));
   }
 
   function openResult({ stage, time, penalty }) {
     visited.add(stage.id);
-    const rec = leaderboard.add(stage.id, time);
-    const delta = time - stage.target;
+    const car = getCar();
+    const rec = leaderboard.add(stage.id, car, time);
+    const target = stage.target?.[car];
+    const delta = target ? time - target : null;
     const p = projects[stage.project] ?? { title: stage.project, summary: [], links: [] };
-    const verdict = delta <= 0 ? `<span style="color:var(--ui-accent)">▼ ${delta.toFixed(1)} — beat the owner</span>`
-      : `<span style="color:var(--ui-bad)">▲ +${delta.toFixed(1)} vs owner</span>`;
+    const verdict = delta === null ? `<span>${esc(CARS[car].name)}</span>`
+      : delta <= 0 ? `<span style="color:var(--ui-accent)">▼ ${delta.toFixed(1)} — beat the owner (${esc(CARS[car].name)})</span>`
+      : `<span style="color:var(--ui-bad)">▲ +${delta.toFixed(1)} vs owner (${esc(CARS[car].name)})</span>`;
     const best = rec.rank === 1 ? ' · NEW BEST' : '';
     open(`${stage.name} · ${p.title}`, `
       <p class="big">${formatTime(time)}</p>
@@ -115,7 +145,7 @@ export function createUI({ bus, stages, onPanel }) {
         ...(p.links ?? []),
         { h: 'TIMES' },
       ])}
-      ${timesLog(stage, rec.entry.hash)}`);
+      ${timesLog(stage, car, rec.entry.hash)}`);
   }
 
   /** Transient card (doesn't block driving). */
@@ -143,10 +173,12 @@ export function createUI({ bus, stages, onPanel }) {
   });
   bus.on('stage:note', ({ text, dist }) => note(`> ${String(dist).padStart(3)}  ${text}`));
   bus.on('stage:split', ({ stage, index, time, missed }) => {
-    const pace = stage.target * (stage.splits[index] - stage.from) / stage.length;
-    lastSplit = time - pace;
-    note(`> split ${index + 1}  ${formatTime(time)}  ${lastSplit <= 0 ? '▼' : '▲'}${lastSplit.toFixed(1)}${missed ? '  missed +10' : ''}`);
+    const target = stage.target?.[getCar()];
+    lastSplit = target ? time - target * (stage.splits[index] - stage.from) / stage.length : null;
+    const delta = lastSplit === null ? '' : `  ${lastSplit <= 0 ? '▼' : '▲'}${lastSplit.toFixed(1)}`;
+    note(`> split ${index + 1}  ${formatTime(time)}${delta}${missed ? '  missed +10' : ''}`);
   });
+  bus.on('car:changed', ({ id }) => note(`> car: ${CARS[id].name} · ${CARS[id].klass}`));
   bus.on('stage:finish', e => { lastSplit = null; note(`> finish ${formatTime(e.time)}`); openResult(e); });
   bus.on('stage:abort', ({ stage, reason }) => { lastSplit = null; count.textContent = ''; note(`> ${stage.name} aborted · ${reason}`); });
 
@@ -168,7 +200,7 @@ export function createUI({ bus, stages, onPanel }) {
       const clock = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
       top.innerHTML = `<span class="prompt">24H</span>${sep}${clock}${sep}${kmh} km/h${sep}<span class="opt">${alt}</span><span class="right">${Math.round(loop.progress * 100)}%</span>`;
     } else {
-      top.innerHTML = `<span class="prompt">${esc(owner.handle)}@stage:${esc(place)} $</span><span class="right opt">${kmh} km/h · ${alt} · ${esc(vehicle.surface ?? '')}</span>`;
+      top.innerHTML = `<span class="prompt">${esc(owner.handle)}@stage:${esc(place)} $</span><span class="right opt">${esc(CARS[getCar()].name)} · ${kmh} km/h · ${alt} · ${esc(vehicle.surface ?? '')}</span>`;
     }
     speed.textContent = `${kmh} km/h`;
 
@@ -187,6 +219,7 @@ export function createUI({ bus, stages, onPanel }) {
     if (stages.state === 'near') prompt.innerHTML = `<b>${esc(stages.active.name)}</b> stop in the box to start`;
     else if (stages.state === 'running' || stages.state === 'countdown') prompt.innerHTML = '';
     else if (zone && panel.hidden) prompt.innerHTML = `<b>[E]</b> open ${esc(zone.title.toLowerCase())}`;
+    else if (slicksOnDirt(vehicle)) prompt.innerHTML = `slicks on ${esc(vehicle.surface)} — <b>[Q]</b> try RALLY or TRAIL`;
     else prompt.innerHTML = '';
 
     if (countTimer > 0) { countTimer -= dt; if (countTimer <= 0) count.textContent = ''; }

@@ -127,3 +127,10 @@
   .ui-map .side h2, .ui-map .side .foot { display: none; }
   .ui-mini { display: none; }
 }
+
+/* Garage car cards */
+.ui-panel .car-card { border: 1px solid var(--ui-line); padding: 6px 8px; margin: 6px 0; }
+.ui-panel .car-card.on { border-color: var(--ui-accent); }
+.ui-panel .car-card button { background: none; border: 0; color: var(--ui-warn); font: inherit; cursor: pointer; padding: 0; }
+.ui-panel .car-card .k { color: var(--ui-dim); }
+.ui-panel .car-card .spec { color: var(--ui-dim); font-size: 12px; }

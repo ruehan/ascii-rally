@@ -43,11 +43,15 @@ export function createStageSystem({ stages, trails, bus }) {
   let dwell = 0, countdown = 0, time = 0, penalty = 0, s = 0, off = 0;
   let nextSplit = 0, nextNote = 0, jumped = false, startPos = null;
 
-  /** Arc length of the nearest route point, searched around the last known s. */
+  /**
+   * Arc length of the nearest route point, searched just around the last
+   * known s (a car moves < 2 m per step), so running wide at a hairpin can't
+   * snap progress across to the other side of the bend.
+   */
   function locate(v) {
     const { path, cum } = active.trail;
     let best = Infinity, bs = s;
-    for (let q = s - 10; q <= s + 30; q += 0.5) {
+    for (let q = s - 10; q <= s + 12; q += 0.5) {
       const p = pointAt(path, cum, q);
       const d = Math.hypot(p.x - v.x, p.z - v.z);
       if (d < best) { best = d; bs = q; }
@@ -107,14 +111,13 @@ export function createStageSystem({ stages, trails, bus }) {
     if (state === 'running') {
       time += dt;
       const loc = locate(v);
-      if (loc.s - s > 25) return abort('teleport');
       s = Math.max(s, loc.s);
 
       off = loc.dist > OFF_ROUTE ? off + dt : 0;
       if (off > OFF_ROUTE_TIME) return abort('off route');
 
       // Pace notes, called ahead by time.
-      const lead = Math.max(15, Math.min(35, Math.abs(v.speed) * NOTE_LEAD));
+      const lead = Math.max(15, Math.min(140, Math.abs(v.speed) * NOTE_LEAD));
       while (nextNote < active.notes.length && active.notes[nextNote].s <= s + lead) {
         const n = active.notes[nextNote++];
         bus.emit('stage:note', { stage: active, text: n.text, dist: Math.max(0, Math.round(n.s - s)) });

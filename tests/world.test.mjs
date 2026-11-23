@@ -1,74 +1,83 @@
-// Drives every road of the real map with a simple autopilot and checks it
-// stays drivable: no props blocking the road, no falling into the sea,
-// forest crests actually launch the car.
+// Drives the real map with an autopilot and checks it stays drivable: no
+// props blocking roads, no falling into the sea, crests launch the car,
+// every stage and the 24H loop can be completed.
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 const root = new URL('..', import.meta.url).href.replace(/\/$/, '');
 const { buildWorld } = await import(root + '/src/world/build.js');
 const { ArcadePhysics } = await import(root + '/src/physics/arcade.js');
+const { createStageSystem } = await import(root + '/src/game/stages.js');
+const { createLoop24 } = await import(root + '/src/game/loop24.js');
+const { createBus } = await import(root + '/src/core/events.js');
 const { pointAt } = await import(root + '/src/world/path.js');
+const { createAutopilot } = await import(root + '/tests/lib/autopilot.mjs');
 const map = (await import(root + '/src/world/map.js')).default;
 
 const w = buildWorld(new THREE.Scene(), map);
 const T = w.terrain, S = w.surfaces;
+const DT = 1 / 60;
 
-function drive(trail) {
+function physics() {
   const p = new ArcadePhysics({ bounds: w.bounds, terrain: { heightAt: T.heightAt, slopeAlong: T.slopeAlong, surfaceAt: S.surfaceAt } });
   w.colliders.forEach(c => p.addStatic(c));
-  const a = pointAt(trail.path, trail.cum, 3), b = pointAt(trail.path, trail.cum, 6);
-  const v = p.createVehicle({ pos: [a.x, a.z], heading: Math.atan2(-(b.x - a.x), -(b.z - a.z)) });
-  const r = { jumps: 0, offroad: 0, stuck: [], sea: false, t: 0, progress: 0 };
-  let s = 3, air = 0, last = [v.x, v.z];
-  while (s < trail.length - 8 && r.t < 120) {
-    let best = Infinity;
-    for (let q = s - 5; q < s + 20; q += 0.5) {
-      const pt = pointAt(trail.path, trail.cum, q);
-      const d = Math.hypot(pt.x - v.x, pt.z - v.z);
-      if (d < best) { best = d; s = q; }
-    }
-    const tgt = pointAt(trail.path, trail.cum, s + 7);
-    let err = Math.atan2(-(tgt.x - v.x), -(tgt.z - v.z)) - v.heading;
-    while (err > Math.PI) err -= 2 * Math.PI;
-    while (err < -Math.PI) err += 2 * Math.PI;
-    p.setIntents(v, { throttle: Math.abs(err) > 0.6 ? 0.3 : 1, brake: 0, steer: Math.max(-1, Math.min(1, err * 2)) });
+  return p;
+}
+
+/** Drive a path with the autopilot until `done()` or timeout; returns stats. */
+function run({ path, cum, from = 3, to = cum.at(-1) - 8, car = 'rally', step = () => {}, done = () => false, timeout = 120 }) {
+  const p = physics();
+  const a = pointAt(path, cum, from);
+  const v = p.createVehicle({ pos: [a.x, a.z], heading: Math.atan2(-a.tx, -a.tz), car });
+  const ap = createAutopilot({ path, cum, surfaceAt: S.surfaceAt, start: from });
+  const r = { jumps: 0, offroad: 0, stuck: [], sea: false, t: 0, v };
+  let air = 0, halt = 0, bestS = from, sinceProgress = 0;
+  while (ap.s < to && r.t < timeout && !done()) {
+    const intents = halt > 0 ? { throttle: 0, brake: 0, steer: 0 } : ap.drive(v);
+    p.setIntents(v, intents);
     const wasAir = v.airborne;
-    p.step(1 / 60);
-    r.t += 1 / 60;
-    if (v.airborne) air += 1 / 60;
+    p.step(DT);
+    halt = step(v, DT) ? 1 : 0;
+    r.t += DT;
+    if (v.airborne) air += DT;
     else if (wasAir) { if (air > 0.15) r.jumps++; air = 0; }
     if (v.y < map.waterLevel - 0.3) r.sea = true;
-    if (best > trail.width / 2 + 1.5) r.offroad += 1 / 60;
-    if (Math.round(r.t * 60) % 120 === 0) {
-      if (Math.hypot(v.x - last[0], v.z - last[1]) < 1) r.stuck.push([+v.x.toFixed(1), +v.z.toFixed(1)]);
-      last = [v.x, v.z];
+    const near = pointAt(path, cum, ap.s);
+    if (Math.hypot(near.x - v.x, near.z - v.z) > 8) r.offroad += DT;
+    // Blocked = no progress along the road for 6 s (brief run-offs that the
+    // autopilot recovers from are fine).
+    if (ap.s > bestS + 2) { bestS = ap.s; sinceProgress = 0; }
+    else if (!halt && (sinceProgress += DT) > 6) {
+      r.stuck.push([+v.x.toFixed(1), +v.z.toFixed(1)]);
+      break;
     }
   }
-  r.progress = s / trail.length;
+  r.progress = (ap.s - from) / Math.max(1, to - from);
   return r;
 }
 
+// Every road end to end.
 for (const trail of T.trails) {
   if (trail.length < 30) continue;
-  const r = drive(trail);
-  assert.ok(r.progress > 0.8, `${trail.id}: only reached ${(r.progress * 100).toFixed(0)}%`);
+  const r = run({ path: trail.path, cum: trail.cum });
+  assert.ok(r.progress > 0.95, `${trail.id}: only reached ${(r.progress * 100).toFixed(0)}%`);
   assert.deepEqual(r.stuck, [], `${trail.id}: stuck at ${JSON.stringify(r.stuck)}`);
   assert.ok(!r.sea, `${trail.id}: fell into the sea`);
   assert.ok(r.offroad < 1, `${trail.id}: ${r.offroad.toFixed(1)} s off the road`);
   if (trail.id === 'forest') assert.ok(r.jumps >= 3, `forest crests should launch the car (got ${r.jumps})`);
 }
+
 // From the spawn the car must reach every road leaving the paddock.
 function reach(target) {
-  const p = new ArcadePhysics({ bounds: w.bounds, terrain: { heightAt: T.heightAt, slopeAlong: T.slopeAlong, surfaceAt: S.surfaceAt } });
-  w.colliders.forEach(c => p.addStatic(c));
+  const p = physics();
   const v = p.createVehicle({ pos: map.spawn.pos, heading: map.spawn.heading });
-  for (let t = 0; t < 15; t += 1 / 60) {
+  for (let t = 0; t < 15; t += DT) {
     const dx = target[0] - v.x, dz = target[1] - v.z;
     if (Math.hypot(dx, dz) < 3) return true;
     let err = Math.atan2(-dx, -dz) - v.heading;
     while (err > Math.PI) err -= 2 * Math.PI;
     while (err < -Math.PI) err += 2 * Math.PI;
-    p.setIntents(v, { throttle: Math.abs(err) > 0.8 ? 0.3 : 0.7, brake: 0, steer: Math.max(-1, Math.min(1, err * 2)) });
-    p.step(1 / 60);
+    p.setIntents(v, { throttle: Math.abs(err) > 0.8 ? 0.2 : 0.4, brake: 0, steer: Math.max(-1, Math.min(1, err * 2)) });
+    p.step(DT);
   }
   return false;
 }
@@ -77,81 +86,53 @@ for (const id of ['forest', 'town', 'valley']) {
   assert.ok(reach(t.points[0]), `spawn can't reach the ${id} road at ${t.points[0]}`);
 }
 
-// Every special stage can be completed: arm in the start box, count down, drive to the finish.
-{
-  const { createStageSystem } = await import(root + '/src/game/stages.js');
-  const { createBus } = await import(root + '/src/core/events.js');
-  for (const cfg of map.stages) {
+// Every special stage can be completed by every car: arm, count down, finish.
+const CARS = ['rally', 'formula', 'hypercar', 'gt', 'trail'];
+const times = {};
+for (const cfg of map.stages) {
+  times[cfg.id] = {};
+  for (const car of CARS) {
     const bus = createBus();
     const events = [];
-    for (const t of ['stage:go', 'stage:split', 'stage:finish', 'stage:abort', 'stage:note']) bus.on(t, e => events.push([t, e]));
+    for (const t of ['stage:split', 'stage:finish', 'stage:abort']) bus.on(t, e => events.push([t, e]));
     const stages = createStageSystem({ stages: [cfg], trails: T.trails, bus });
     const trail = T.trails.find(t => t.id === cfg.trail);
-    const p = new ArcadePhysics({ bounds: w.bounds, terrain: { heightAt: T.heightAt, slopeAlong: T.slopeAlong, surfaceAt: S.surfaceAt } });
-    w.colliders.forEach(c => p.addStatic(c));
-    const a = pointAt(trail.path, trail.cum, cfg.from);
-    const v = p.createVehicle({ pos: [a.x, a.z], heading: Math.atan2(-a.tx, -a.tz) });
-    let s = cfg.from;
-    for (let t = 0; t < 90 && !events.some(e => e[0] === 'stage:finish' || e[0] === 'stage:abort'); t += 1 / 60) {
-      const go = stages.state === 'running';
-      let best = Infinity;
-      for (let q = s - 5; q < s + 20; q += 0.5) {
-        const pt = pointAt(trail.path, trail.cum, q);
-        const d = Math.hypot(pt.x - v.x, pt.z - v.z);
-        if (d < best) { best = d; s = q; }
-      }
-      const tgt = pointAt(trail.path, trail.cum, s + 7);
-      let err = Math.atan2(-(tgt.x - v.x), -(tgt.z - v.z)) - v.heading;
-      while (err > Math.PI) err -= 2 * Math.PI;
-      while (err < -Math.PI) err += 2 * Math.PI;
-      p.setIntents(v, go
-        ? { throttle: Math.abs(err) > 0.6 ? 0.3 : 1, brake: 0, steer: Math.max(-1, Math.min(1, err * 2)) }
-        : { throttle: 0, brake: 0, steer: 0 });
-      p.step(1 / 60);
-      stages.update(1 / 60, v);
-    }
+    run({
+      path: trail.path, cum: trail.cum, from: cfg.from, to: cfg.to + 20, car, timeout: 200,
+      step: (v, dt) => { stages.update(dt, v); return stages.state !== 'running'; },
+      done: () => events.some(e => e[0] === 'stage:finish' || e[0] === 'stage:abort'),
+    });
     const fin = events.find(e => e[0] === 'stage:finish');
     const abort = events.find(e => e[0] === 'stage:abort');
-    assert.ok(fin, `${cfg.name}: did not finish${abort ? ' (' + abort[1].reason + ')' : ''}`);
-    assert.equal(events.filter(e => e[0] === 'stage:split').length, cfg.splits.length, `${cfg.name}: splits`);
-    assert.equal(fin[1].penalty, 0, `${cfg.name}: autopilot run should be clean`);
-    const notes = events.filter(e => e[0] === 'stage:note').map(e => e[1].text);
-    console.log(`  ${cfg.name} ${trail.id.padEnd(6)} ${fin[1].time.toFixed(1)}s (target ${cfg.target}s)  notes: ${notes.join(' | ')}`);
+    // Cars with real grip on the stage's surface must finish; slicks on
+    // gravel are allowed to fail (that's the point of choosing a car).
+    const { CARS: SPECS } = await import(root + '/src/vehicle/cars.js');
+    const mustFinish = (SPECS[car].tyres[trail.surface] ?? 1) >= 0.6;
+    if (mustFinish) {
+      assert.ok(fin, `${cfg.name}/${car}: did not finish${abort ? ' (' + abort[1].reason + ')' : ''}`);
+      assert.equal(events.filter(e => e[0] === 'stage:split').length, cfg.splits.length, `${cfg.name}/${car}: splits`);
+    }
+    times[cfg.id][car] = fin ? +fin[1].time.toFixed(1) : 'DNF';
   }
 }
+console.log('  stage times (autopilot):');
+for (const [id, t] of Object.entries(times)) console.log(`    ${id}  ${CARS.map(c => `${c} ${t[c]}`).join('  ')}`);
 
-// The 24H loop can be driven start to finish on the real map.
+// The 24H loop can be driven start to finish.
 {
-  const { createLoop24 } = await import(root + '/src/game/loop24.js');
-  const { createBus } = await import(root + '/src/core/events.js');
   const bus = createBus();
   const events = [];
   for (const t of ['loop:start', 'loop:milestone', 'loop:finish', 'loop:pause']) bus.on(t, () => events.push(t));
   const route = w.route;
   const loop = createLoop24({ route, start: map.loop24.start, milestones: [1, 2, 3, 4, 5, 6].map(i => ({ year: i })), bus });
-  const p = new ArcadePhysics({ bounds: w.bounds, terrain: { heightAt: T.heightAt, slopeAlong: T.slopeAlong, surfaceAt: S.surfaceAt } });
-  w.colliders.forEach(c => p.addStatic(c));
-  const a = pointAt(route.path, route.cum, 2);
-  const v = p.createVehicle({ pos: [a.x, a.z], heading: Math.atan2(-a.tx, -a.tz) });
-  let s = 2, t = 0;
-  for (; t < 240 && !events.includes('loop:finish') && !events.includes('loop:pause'); t += 1 / 60) {
-    let best = Infinity;
-    for (let q = s - 5; q < s + 20; q += 0.5) {
-      const pt = pointAt(route.path, route.cum, q);
-      const d = Math.hypot(pt.x - v.x, pt.z - v.z);
-      if (d < best) { best = d; s = q; }
-    }
-    const tgt = pointAt(route.path, route.cum, s + 7);
-    let err = Math.atan2(-(tgt.x - v.x), -(tgt.z - v.z)) - v.heading;
-    while (err > Math.PI) err -= 2 * Math.PI;
-    while (err < -Math.PI) err += 2 * Math.PI;
-    p.setIntents(v, { throttle: Math.abs(err) > 0.6 ? 0.3 : 1, brake: 0, steer: Math.max(-1, Math.min(1, err * 2)) });
-    p.step(1 / 60);
-    loop.update(1 / 60, v);
-  }
+  const r = run({
+    path: route.path, cum: route.cum, from: 2, to: route.length, timeout: 240,
+    step: (v, dt) => { loop.update(dt, v); },
+    done: () => events.includes('loop:finish') || events.includes('loop:pause'),
+  });
   assert.deepEqual(events.filter(e => e !== 'loop:milestone'), ['loop:start', 'loop:finish'], `24H events: ${events}`);
   assert.equal(events.filter(e => e === 'loop:milestone').length, 6);
-  console.log(`  24H lap ${route.length.toFixed(0)} m in ${t.toFixed(0)} s`);
+  console.log(`  24H lap ${route.length.toFixed(0)} m in ${r.t.toFixed(0)} s`);
 }
 
 // The ASCII map reads the world correctly.

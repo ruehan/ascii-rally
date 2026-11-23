@@ -118,7 +118,7 @@ export function createParticles(scene) {
       const loose = surface in DUST_COLORS;
       const sliding = Math.abs(v.steer) > 0.6 && speed > 8;
       let rate = 0;
-      if (loose && speed > 3) rate = speed * 3;                    // dust trail
+      if (loose && speed > 3) rate = Math.min(120, speed * 3);     // dust trail
       else if (!loose && sliding) rate = speed * 0.8;               // tyre smoke on tarmac/cobbles
       carry += rate * dt;
       const fx = -Math.sin(v.heading), fz = -Math.cos(v.heading);

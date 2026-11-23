@@ -3,6 +3,7 @@ const MOVE_KEYS = {
   KeyS: 'backward', ArrowDown: 'backward',
   KeyA: 'left', ArrowLeft: 'left',
   KeyD: 'right', ArrowRight: 'right',
+  Space: 'handbrake',
 };
 
 /**
@@ -10,14 +11,14 @@ const MOVE_KEYS = {
  * Set `enabled = false` (e.g. while a UI panel is open) to ignore movement.
  */
 export function createInput(target = window) {
-  const held = { forward: false, backward: false, left: false, right: false };
+  const held = { forward: false, backward: false, left: false, right: false, handbrake: false };
   const actions = new Map();
 
   const input = {
     enabled: true,
     /** Movement state, all false while disabled. */
     get state() {
-      return input.enabled ? held : { forward: false, backward: false, left: false, right: false };
+      return input.enabled ? held : { forward: false, backward: false, left: false, right: false, handbrake: false };
     },
     /** Register a one-shot action for a KeyboardEvent.code (or several). */
     onPress(codes, fn) {

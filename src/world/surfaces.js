@@ -13,17 +13,7 @@ export const SURFACE_IDS = { grass: 0, gravel: 1, dirt: 2, cobble: 3, asphalt: 4
 export const SURFACE_NAMES = Object.keys(SURFACE_IDS);
 export const SDF_RANGE = 4; // must exceed any placement clearance asked of insideAt()
 
-/** Physics per surface. Top speed ≈ accel / drag. */
-export const SURFACE_PHYSICS = {
-  grass:   { grip: 0.7,  drag: 3.2 },
-  gravel:  { grip: 0.8,  drag: 2.4 },
-  dirt:    { grip: 0.85, drag: 2.5 },
-  cobble:  { grip: 0.9,  drag: 2.4 },
-  asphalt: { grip: 1.0,  drag: 2.0 },
-  kerb:    { grip: 0.9,  drag: 2.1 },
-  pad:     { grip: 0.95, drag: 2.2 },
-  sand:    { grip: 0.6,  drag: 3.6 },
-};
+// Grip per surface lives with each car's tyres (vehicle/cars.js).
 
 /** Per-segment flag: does the path turn noticeably around this segment? */
 function bends(path, closed) {

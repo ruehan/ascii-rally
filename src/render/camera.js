@@ -25,6 +25,7 @@ export function createCameraRig(camera, terrain) {
   let groundY = null;
   let lift = 0;
   let shake = 0;           // metres, decays
+  let zoom = 1;
 
   function update(dt, car, vehicle) {
     const m = MODES[mode];
@@ -57,7 +58,9 @@ export function createCameraRig(camera, terrain) {
     }
     lift += (need - lift) * (1 - Math.exp(-dt * (need > lift ? 6 : 1.5)));
 
-    goal.set(target.x + bx * (1 - lift * 0.03), target.y + m.height + lift, target.z + bz * (1 - lift * 0.03));
+    // Pull back a little at speed so there's more road ahead.
+    zoom += (1 + Math.min(0.35, Math.abs(vehicle.speed) / 150) - zoom) * (1 - Math.exp(-dt * 1.5));
+    goal.set(target.x + bx * zoom * (1 - lift * 0.03), target.y + m.height * zoom + lift, target.z + bz * zoom * (1 - lift * 0.03));
     camera.position.lerp(goal, 1 - Math.exp(-dt * 5));
     camera.lookAt(target.x, target.y + 0.8, target.z);
     if (shake > 0.01) {

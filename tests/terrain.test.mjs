@@ -60,7 +60,7 @@ const slope = { heightAt: (x, z) => 0.1 * z, slopeAlong: (x, z, dx, dz) => 0.1 *
   };
   const p = new ArcadePhysics({ terrain: ramp });
   const v = p.createVehicle({ pos: [0, 10] });
-  v.speed = 18;
+  p.setSpeed(v, 18);
   p.setIntents(v, { throttle: 1, brake: 0, steer: 0 });
   let flew = false, landed = false;
   for (let i = 0; i < 240; i++) {
@@ -76,7 +76,7 @@ const slope = { heightAt: (x, z) => 0.1 * z, slopeAlong: (x, z, dx, dz) => 0.1 *
 {
   const topSpeed = surface => {
     const p = new ArcadePhysics({ terrain: { heightAt: () => 0, slopeAlong: () => 0, surfaceAt: () => surface } });
-    const v = p.createVehicle();
+    const v = p.createVehicle({ car: 'gt' }); // slicks: surface matters
     p.setIntents(v, { throttle: 1, brake: 0, steer: 0 });
     for (let i = 0; i < 600; i++) p.step(1 / 60);
     return v.speed;

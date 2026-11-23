@@ -25,8 +25,9 @@ function write(data) {
 const hash = () => Math.floor(Math.random() * 0xfffffff).toString(16).padStart(7, '0');
 
 export const leaderboard = {
-  /** Records a time; returns { entry, best, rank }. */
-  add(stageId, time) {
+  /** Records a time (keyed by stage and car); returns { entry, best, rank }. */
+  add(stageId, car, time) {
+    stageId = `${stageId}:${car}`;
     const data = read();
     const entry = { hash: hash(), time, date: new Date().toISOString().slice(0, 10) };
     const list = [...(data[stageId] ?? []), entry].sort((a, b) => a.time - b.time).slice(0, KEEP);
@@ -34,8 +35,8 @@ export const leaderboard = {
     write(data);
     return { entry, best: list[0], rank: list.indexOf(entry) + 1 || null };
   },
-  get(stageId) {
-    return read()[stageId] ?? [];
+  get(stageId, car) {
+    return read()[`${stageId}:${car}`] ?? [];
   },
 };
 

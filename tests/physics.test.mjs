@@ -23,19 +23,53 @@ const big = box(0, 0, 20, 20); h.insert(big); h.insert(circle(100, 100, 1));
 assert.equal(h.query(0, 0, 30).length, 1);
 assert.equal(h.query(100, 100, 2).length, 1);
 
-// vehicle top speed ~ accel/drag
-const p = new ArcadePhysics({ bounds: { type: 'circle', r: 1000 } });
-const v = p.createVehicle({ pos: [0, 0] });
-p.setIntents(v, { throttle: 1, brake: 0, steer: 0 });
-for (let i = 0; i < 600; i++) p.step(1 / 60);
-near(v.speed, 28 * (1 - 2.2 / 60) / 2.2, 0.01);
-assert.ok(v.z < -50, 'moves toward -Z');
+// car classes: realistic acceleration / top speed (flat asphalt)
+const { CARS } = await import(root + '/src/vehicle/cars.js');
+const flat = surface => ({ heightAt: () => 0, slopeAlong: () => 0, surfaceAt: () => surface });
+for (const id of ['rally', 'formula', 'gt']) {
+  const p = new ArcadePhysics({ bounds: { type: 'circle', r: 1e5 }, terrain: flat('asphalt') });
+  const v = p.createVehicle({ pos: [0, 0], car: id });
+  p.setIntents(v, { throttle: 1, brake: 0, steer: 0 });
+  let t100 = null;
+  for (let t = 0; t < 60; t += 1 / 60) { p.step(1 / 60); if (t100 === null && v.speed >= 100 / 3.6) t100 = t; }
+  const c = CARS[id];
+  assert.ok(Math.abs(t100 - c.zeroTo100) < 0.6, `${id} 0-100 ${t100.toFixed(2)} vs spec ${c.zeroTo100}`);
+  assert.ok(Math.abs(v.speed * 3.6 - c.vmax) < c.vmax * 0.05, `${id} top ${(v.speed * 3.6).toFixed(0)} vs ${c.vmax}`);
+  assert.ok(v.z < -50, 'moves toward -Z');
+}
+
+// slicks are hopeless on gravel; rally tyres aren't
+{
+  const top = (id, surface) => {
+    const p = new ArcadePhysics({ terrain: flat(surface) });
+    const v = p.createVehicle({ car: id });
+    p.setIntents(v, { throttle: 1, brake: 0, steer: 0 });
+    for (let i = 0; i < 3600; i++) p.step(1 / 60);
+    return v.speed * 3.6;
+  };
+  assert.ok(top('formula', 'gravel') < 80, 'F1 bogs down on gravel');
+  assert.ok(top('rally', 'gravel') > 180, 'rally car flies on gravel');
+}
+
+// handbrake makes the car rotate and slide (drift)
+{
+  const p = new ArcadePhysics({ terrain: flat('gravel') });
+  const v = p.createVehicle({ car: 'rally' });
+  p.setSpeed(v, 20);
+  let maxSlip = 0;
+  for (let i = 0; i < 60; i++) {
+    p.setIntents(v, { throttle: 0.5, brake: 0, steer: 1, handbrake: i < 30 ? 1 : 0 });
+    p.step(1 / 60);
+    maxSlip = Math.max(maxSlip, Math.abs(v.slip));
+  }
+  assert.ok(maxSlip > 3, `handbrake turn slides sideways (${maxSlip.toFixed(1)} m/s)`);
+}
 
 // single bounce when hitting two overlapping obstacles
 const p2 = new ArcadePhysics({ bounds: { type: 'circle', r: 1000 } });
 p2.addStatic(circle(-0.5, -3, 1)); p2.addStatic(circle(0.5, -3, 1));
 const v2 = p2.createVehicle({ pos: [0, 0] });
-v2.speed = 10; p2.setIntents(v2, { throttle: 0, brake: 0, steer: 0 });
+p2.setSpeed(v2, 10); p2.setIntents(v2, { throttle: 0, brake: 0, steer: 0 });
 let bounced = false;
 for (let i = 0; i < 60 && !bounced; i++) { p2.step(1 / 60); if (v2.speed < 0) bounced = true; }
 assert.ok(bounced, 'bounced');

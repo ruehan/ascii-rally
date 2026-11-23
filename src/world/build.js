@@ -376,7 +376,7 @@ export function buildWorld(scene, map) {
     const gate = (d, postColor, beam) => {
       const p = at(d);
       const yaw = yawAlong(p.tx, p.tz);
-      const off = tr.width / 2 + 1;
+      const off = tr.width / 2 + 2; // clear of the road: cars have a ~1.4 m collision radius
       let top = -Infinity;
       for (const sgn of [-1, 1]) {
         const [x, z] = side(p, off * sgn);
@@ -398,7 +398,7 @@ export function buildWorld(scene, map) {
     // Splits: plain posts with a gold flag.
     for (const d of st.splits) {
       gate(d, '#d9d9d9', (p, yaw, top) => {
-        const [x, z] = side(p, tr.width / 2 + 1);
+        const [x, z] = side(p, tr.width / 2 + 2);
         put(G.block(), '#ffd166', CHARSET.GOLD, x, top - 0.4, z, 0.05, 0.9, 1.3, { yaw, shadow: false });
       });
     }

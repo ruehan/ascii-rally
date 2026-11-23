@@ -7,5 +7,6 @@ export function readIntents(state) {
     throttle: state.forward ? 1 : 0,
     brake: state.backward ? 1 : 0,
     steer: (state.left ? 1 : 0) - (state.right ? 1 : 0),
+    handbrake: state.handbrake ? 1 : 0,
   };
 }

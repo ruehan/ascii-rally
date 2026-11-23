@@ -7,6 +7,7 @@ import { buildWorld } from './world/build.js';
 import map from './world/map.js';
 import { ArcadePhysics } from './physics/arcade.js';
 import { CarView } from './vehicle/car.js';
+import { CAR_ORDER, DEFAULT_CAR } from './vehicle/cars.js';
 import { readIntents } from './vehicle/controller.js';
 import { createInput } from './core/input.js';
 import { createLoop } from './core/loop.js';
@@ -47,8 +48,11 @@ const physics = new ArcadePhysics({
   terrain: { heightAt: terrain.heightAt, slopeAlong: terrain.slopeAlong, surfaceAt: surfaces.surfaceAt },
 });
 world.colliders.forEach(s => physics.addStatic(s));
-const vehicle = physics.createVehicle({ pos: world.spawn.pos, heading: world.spawn.heading });
-const car = new CarView(scene);
+// Chosen car persists per browser (guarded: storage may be unavailable).
+const savedCar = (() => { try { return localStorage.getItem('stage~/car'); } catch { return null; } })();
+let carId = CAR_ORDER.includes(savedCar) ? savedCar : DEFAULT_CAR;
+const vehicle = physics.createVehicle({ pos: world.spawn.pos, heading: world.spawn.heading, car: carId });
+const car = new CarView(scene, carId);
 const rig = createCameraRig(camera, terrain);
 
 // --- Game systems ---------------------------------------------------------
@@ -56,7 +60,19 @@ const bus = createBus();
 const zones = createZoneSystem({ zones: map.zones, bus });
 const stages = createStageSystem({ stages: map.stages, trails: terrain.trails, bus });
 const input = createInput();
-const ui = createUI({ bus, stages, onPanel: open => { input.enabled = !open; } });
+const ui = createUI({ bus, stages, onPanel: open => { input.enabled = !open; }, getCar: () => carId });
+
+function selectCar(id) {
+  if (id === carId) return;
+  carId = id;
+  stages.abort();
+  physics.setCar(vehicle, id);
+  car.setModel(id);
+  ascii.invalidate(); // nested meshes changed
+  try { localStorage.setItem('stage~/car', id); } catch { /* not persisted */ }
+  bus.emit('car:changed', { id });
+}
+bus.on('car:select', ({ id }) => selectCar(id));
 const particles = createParticles(scene);
 const audio = createAudio();
 const wheels = [[0, 0, 0], [0, 0, 0]];
@@ -97,6 +113,7 @@ input.onPress('KeyG', () => ascii.toggleEdges());
 input.onPress(['Equal', 'NumpadAdd'], () => ascii.setCellSize(Math.min(24, ascii.cellSize + 2)));
 input.onPress(['Minus', 'NumpadSubtract'], () => ascii.setCellSize(Math.max(6, ascii.cellSize - 2)));
 input.onPress('KeyR', () => { ui.close(); respawn(world.spawn); });
+input.onPress('KeyQ', () => selectCar(CAR_ORDER[(CAR_ORDER.indexOf(carId) + 1) % CAR_ORDER.length]));
 input.onPress('KeyE', () => { if (!mapUI.isOpen && !ui.close()) zones.open(); });
 input.onPress('Escape', () => { if (!mapUI.close()) ui.close(); });
 input.onPress('KeyV', () => ui.note(`> camera: ${rig.toggleMode()}`));

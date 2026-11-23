@@ -45,7 +45,7 @@ export function createLoop24({ route, start, startHour = 15, milestones = [], bu
 
   function locate(v) {
     let best = Infinity, bs = s;
-    for (let q = s - 10; q <= s + 30; q += 1) {
+    for (let q = s - 10; q <= s + 12; q += 1) { // narrow: never snap across a bend
       const p = pointAt(route.path, route.cum, q);
       const d = Math.hypot(p.x - v.x, p.z - v.z);
       if (d < best) { best = d; bs = q; }

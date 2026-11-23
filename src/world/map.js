@@ -62,7 +62,8 @@ export default {
       points: [[-22, 120], [-50, 110], [-75, 90], [-86, 60], [-70, 34], [-52, 8], [-62, -20],
         [-90, -40], [-122, -54], [-152, -34], [-162, 0], [-142, 30], [-152, 64], [-130, 94],
         [-100, 110], [-70, 126], [-42, 130]],
-      crests: [{ at: 140, length: 22, height: 2.8 }, { at: 330, length: 20, height: 3.0 }, { at: 470, length: 22, height: 2.6 }],
+      // Crests sit on straights so you land with road ahead (see docs).
+      crests: [{ at: 125, length: 20, height: 2.2 }, { at: 200, length: 22, height: 2.8 }, { at: 465, length: 22, height: 3.0 }],
     },
     {
       id: 'town', surface: 'cobble', width: 6, shoulder: 4, smooth: 30,
@@ -92,8 +93,8 @@ export default {
     {
       // Circuit (F1-style, clockwise): main straight north, hairpin, chicane, sweeper.
       id: 'circuit', surface: 'asphalt', width: 10, shoulder: 4, smooth: 30, closed: true, kerbs: true,
-      points: [[18, -46], [18, -104], [26, -114], [40, -114], [46, -104], [42, -92], [50, -86],
-        [64, -92], [74, -82], [74, -64], [64, -52], [54, -58], [46, -50], [36, -40], [24, -38]],
+      points: [[18, -46], [18, -104], [26, -114], [40, -114], [46, -104], [44, -92], [52, -84],
+        [66, -88], [75, -78], [74, -62], [64, -50], [48, -48], [34, -40], [24, -38]],
     },
     {
       id: 'circuit-access', surface: 'asphalt', width: 6, shoulder: 3, smooth: 10,
@@ -116,14 +117,15 @@ export default {
 
   // Special stages = projects. Ranges are metres along a trail (driven in
   // increasing direction). One surface each, like a mixed-surface rally.
-  // target = the owner's time to beat (seconds).
+  // target = the owner's time to beat per car class (seconds; missing = no
+  // target, e.g. slicks on gravel).
   stages: [
-    { id: 'ss1', name: 'SS1', trail: 'forest', from: 25, to: 265, splits: [100, 185], project: 'p1', hue: '#ffd166', target: 24 },
-    { id: 'ss2', name: 'SS2', trail: 'town', from: 40, to: 305, splits: [120, 220], project: 'p2', hue: '#ff6b6b', target: 28 },
-    { id: 'ss3', name: 'SS3', trail: 'coast', from: 222, to: 395, splits: [280, 340], project: 'p3', hue: '#4dabf7', target: 15 },
-    { id: 'ss4', name: 'SS4', trail: 'east', from: 20, to: 340, splits: [120, 230], project: 'p4', hue: '#c77dff', target: 33 },
-    { id: 'ss5', name: 'SS5', trail: 'valley', from: 40, to: 230, splits: [100, 165], project: 'p5', hue: '#5dff8a', target: 17 },
-    { id: 'ss6', name: 'SS6', trail: 'circuit', from: 6, to: 241, splits: [85, 165], project: 'p6', hue: '#ff9a3c', target: 19 },
+    { id: 'ss1', name: 'SS1', trail: 'forest', from: 25, to: 250, splits: [100, 185], project: 'p1', hue: '#ffd166', target: { rally: 17.5, gt: 27, trail: 20.5 } },
+    { id: 'ss2', name: 'SS2', trail: 'town', from: 40, to: 305, splits: [120, 220], project: 'p2', hue: '#ff6b6b', target: { rally: 21, formula: 23.5, hypercar: 23, gt: 22, trail: 23.5 } },
+    { id: 'ss3', name: 'SS3', trail: 'coast', from: 222, to: 395, splits: [280, 340], project: 'p3', hue: '#4dabf7', target: { rally: 15, formula: 12.5, hypercar: 13.5, gt: 14, trail: 17.5 } },
+    { id: 'ss4', name: 'SS4', trail: 'east', from: 20, to: 340, splits: [120, 230], project: 'p4', hue: '#c77dff', target: { rally: 21, formula: 34.5, hypercar: 31, gt: 24.5, trail: 23.5 } },
+    { id: 'ss5', name: 'SS5', trail: 'valley', from: 40, to: 230, splits: [100, 165], project: 'p5', hue: '#5dff8a', target: { rally: 12, formula: 10.5, hypercar: 11, gt: 12, trail: 15.5 } },
+    { id: 'ss6', name: 'SS6', trail: 'circuit', from: 6, to: 231, splits: [80, 160], project: 'p6', hue: '#ff9a3c', target: { rally: 24, formula: 21.5, hypercar: 21.5, gt: 22, trail: 27 } },
   ],
 
   // 24H loop: a route stitched from existing roads (clockwise). Driving it
