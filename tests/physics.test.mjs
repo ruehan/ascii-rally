@@ -82,3 +82,17 @@ p3.setIntents(v3, { throttle: 1, brake: 0, steer: 0 });
 for (let i = 0; i < 600; i++) p3.step(1 / 60);
 assert.ok(Math.hypot(v3.x, v3.z) <= 10 + 1e-6);
 console.log('all physics tests passed');
+
+// handbrake holds the car on a slope (parking brake)
+{
+  const slope = { heightAt: (x, z) => 0.2 * z, slopeAlong: (x, z, dx, dz) => 0.2 * dz, surfaceAt: () => 'asphalt' };
+  const p = new ArcadePhysics({ terrain: slope });
+  const v = p.createVehicle({ car: 'rally' });
+  p.setIntents(v, { throttle: 0, brake: 0, steer: 0, handbrake: 1 });
+  for (let i = 0; i < 120; i++) p.step(1 / 60);
+  assert.ok(Math.abs(v.z) < 0.05, `held on a 20% slope (moved ${v.z.toFixed(2)} m)`);
+  p.setIntents(v, { throttle: 0, brake: 0, steer: 0, handbrake: 0 });
+  for (let i = 0; i < 60; i++) p.step(1 / 60);
+  assert.ok(Math.abs(v.z) > 0.5, 'rolls once released');
+  console.log('handbrake hold passed');
+}

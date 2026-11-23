@@ -221,8 +221,12 @@ export class ArcadePhysics {
       vLat -= Math.max(-catchUp, Math.min(catchUp, vLat));
     }
 
-    // Parked on gentle ground: static friction holds the car still.
-    if (!throttle && !brake && ground && Math.abs(vLong) < 0.05 && Math.abs(Fslope / m) < 0.5) {
+    // Parked: static friction holds the car on gentle ground; the handbrake
+    // holds it on any slope the tyres can grip.
+    const parked = !throttle && ground && (
+      (!brake && Math.abs(vLong) < 0.05 && Math.abs(Fslope / m) < 0.5) ||
+      (handbrake && Math.abs(vLong) < 1 && Math.abs(Fslope) < mu * N));
+    if (parked) {
       vLong = 0;
       vLat *= 0.5;
     }

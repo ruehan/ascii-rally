@@ -32,7 +32,7 @@ function run({ path, cum, from = 3, to = cum.at(-1) - 8, car = 'rally', step = (
   const r = { jumps: 0, offroad: 0, stuck: [], sea: false, t: 0, v };
   let air = 0, halt = 0, bestS = from, sinceProgress = 0;
   while (ap.s < to && r.t < timeout && !done()) {
-    const intents = halt > 0 ? { throttle: 0, brake: 0, steer: 0 } : ap.drive(v);
+    const intents = halt > 0 ? { throttle: 0, brake: 0, steer: 0, handbrake: 1 } : ap.drive(v); // wait on the handbrake
     p.setIntents(v, intents);
     const wasAir = v.airborne;
     p.step(DT);
@@ -142,7 +142,7 @@ for (const [id, t] of Object.entries(times)) console.log(`    ${id}  ${CARS.map(
   const at = (x, z) => MAP_CLASSES[g.classAt(...g.toCell(x, z).map(Math.floor))].id;
   assert.equal(at(0, -190), 'sea', 'north edge is sea');
   assert.equal(at(...map.zones.find(z => z.id === 'paddock').pos), 'pad');
-  assert.equal(at(18, -80), 'asphalt', 'circuit main straight');
+  assert.equal(at(46, -76), 'asphalt', 'skidpad');
   const count = id => g.cls.filter(k => MAP_CLASSES[k].id === id).length;
   assert.ok(count('tree') > 200, `forest shows up (${count('tree')} tree cells)`);
   assert.ok(count('building') > 30, `town shows up (${count('building')} building cells)`);
