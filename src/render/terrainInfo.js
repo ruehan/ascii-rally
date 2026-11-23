@@ -12,7 +12,7 @@ SURFACE_SET[SURFACE_IDS.asphalt] = CHARSET.ASPHALT;
 SURFACE_SET[SURFACE_IDS.kerb] = CHARSET.KERB;
 SURFACE_SET[SURFACE_IDS.pad] = CHARSET.FLOOR;
 SURFACE_SET[SURFACE_IDS.sand] = CHARSET.SAND;
-SURFACE_SET[SURFACE_IDS.snow] = CHARSET.SNOW;
+SURFACE_SET[SURFACE_IDS.snow] = CHARSET.PACKED; // road snow; off-road snow comes from the biome
 SURFACE_SET[SURFACE_IDS.ice] = CHARSET.ICE;
 SURFACE_SET[SURFACE_IDS.dune] = CHARSET.DUNE;
 for (let i = 0; i < 16; i++) SURFACE_SET[i] ??= -1;
@@ -22,7 +22,7 @@ for (let i = 0; i < 16; i++) SURFACE_SET[i] ??= -1;
  * cliff by slope, or road surface) and line encoding for contours / road
  * edges. Writes smooth normals so slopes don't turn into edge glyphs.
  */
-export function createTerrainInfoMaterial({ surfaceIdTex, surfaceSdfTex, size, bands = [6, 14], contour = 2 }) {
+export function createTerrainInfoMaterial({ surfaceIdTex, surfaceSdfTex, size, bands = [6, 14], contour = 3 }) {
   return new THREE.ShaderMaterial({
     uniforms: {
       tSurfId: { value: surfaceIdTex },
@@ -93,12 +93,13 @@ export function createTerrainInfoMaterial({ surfaceIdTex, surfaceSdfTex, size, b
         float dLine = min(fract(hb), 1.0 - fract(hb)) / max(fh, 1e-4);
         vec2 g = vec2(0.0);
         bool isLine = false;
-        if (fs > 1e-4 && dEdge < 1.6) { g = gS; isLine = true; }
+        float kind = 0.0; // 0 contour, 4 road edge
+        if (fs > 1e-4 && dEdge < 1.6) { g = gS; isLine = true; kind = 4.0; }
         else if (!onSurf && fh < 0.35 && dLine < 1.1) { g = gH; isLine = true; }
         if (isLine) {
           float th = atan(g.y, g.x);
           if (th < 0.0) th += PI;
-          a = 128.0 + mod(floor(th / (PI * 0.25) + 0.5), 4.0);
+          a = 128.0 + kind + mod(floor(th / (PI * 0.25) + 0.5), 4.0);
         }
         gl_FragColor = vec4(normalize(vViewNormal) * 0.5 + 0.5, a / 255.0);
       }

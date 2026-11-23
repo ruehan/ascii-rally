@@ -111,7 +111,12 @@ export function createUI({ bus, stages, onPanel, getCar }) {
     visited.add(zone.id);
     const car = getCar();
     if (zone.content === 'hq') {
-      const html = stages.stages.map(st => {
+      // In stage-number order; hidden stages only once they've been driven.
+      const num = st => (/\d+/.exec(st.name) ? +/\d+/.exec(st.name)[0] : 99);
+      const list = stages.stages
+        .filter(st => !st.hidden || leaderboard.get(st.id, car).length)
+        .sort((a, b) => num(a) - num(b));
+      const html = list.map(st => {
         return `<h3>── ${esc(st.name)} · ${esc(projectOf(st).title)} ──</h3>${timesLog(st, car)}`;
       }).join('');
       open('$ git log --stages', `<p>Stage times on this browser for <b>${esc(CARS[car].name)}</b>. Beat the owner's targets.</p>${html}`);

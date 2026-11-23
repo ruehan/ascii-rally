@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { MAX_SETS, CHARSET_GLYPHS, EDGE_GLYPHS, CHARSET } from './charsets.js';
+import { MAX_SETS, CHARSET_GLYPHS, EDGE_GLYPHS, CHARSET, SET_DENSITY, SET_FILL } from './charsets.js';
 import { cutawayUniforms, CUTAWAY_GLSL } from './cutaway.js';
 
 const ATLAS_COLS = 16;
@@ -117,6 +117,8 @@ const fragmentShader = /* glsl */ `
   uniform float atlasRows;
   uniform float rampStart[MAX_SETS];
   uniform float rampLen[MAX_SETS];
+  uniform float setDensity[MAX_SETS];
+  uniform float setFill[MAX_SETS];
   uniform float edgeStart;
   uniform float colorMode;     // 1 = per-object colour, 0 = mono terminal
   uniform vec3 monoColor;
@@ -171,7 +173,7 @@ const fragmentShader = /* glsl */ `
     // Dither nudges cells near a step boundary to the neighbouring glyph.
     float start = rampStart[set];
     float len = rampLen[set];
-    float l = clamp(lum + (hash(cell) - 0.5) * dither / len, 0.0, 0.999);
+    float l = clamp(lum * setDensity[set] + (hash(cell) - 0.5) * dither / len, 0.0, 0.999);
     float idx = start + min(floor(l * len), len - 1.0);
 
     // --- Edge detection: Sobel over neighbouring cells on depth + normals,
@@ -224,13 +226,17 @@ const fragmentShader = /* glsl */ `
     float peak = max(max(col.r, col.g), max(col.b, 1e-3));
     vec3 hue = col / peak;
     vec3 tint = mix(monoColor, mix(hue, vec3(1.0), pastel), colorMode);
+    // The wash keeps the surface colour under contours; road edges also
+    // darken the wash so the road reads as a crisp band.
+    vec3 baseTint = tint;
+    if (isLine && aByte >= 132.0) baseTint = mix(tint, background, lineDim);
     if (edge > 0.0) tint = mix(tint, vec3(1.0), 0.35) * edgeGain; // edges a touch brighter
     else if (edge < 0.0) tint = mix(tint, background, lineDim);
 
     // Lit cells get a faint wash of their colour behind the glyph; empty
     // (dark) cells stay pure background so the terminal look survives.
     #ifdef OUT_BG
-      gl_FragColor = vec4(background + tint * cellFill * smoothstep(0.03, 0.6, lum), 1.0);
+      gl_FragColor = vec4(background + baseTint * cellFill * setFill[set] * clamp(lum * 1.3, 0.0, 1.0), 1.0);
     #else
       gl_FragColor = vec4(tint, idx / 255.0);
     #endif
@@ -326,6 +332,8 @@ export class AsciiRenderer {
         atlasRows: { value: atlas.rows },
         rampStart: { value: rampStart },
         rampLen: { value: rampLen },
+        setDensity: { value: SET_DENSITY },
+        setFill: { value: SET_FILL },
         edgeStart: { value: edgeStart },
         colorMode: { value: 1 },
         monoColor: { value: new THREE.Color('#5dff8a') },
@@ -333,14 +341,14 @@ export class AsciiRenderer {
         edgesOn: { value: 1 },
         edgeThreshold: { value: 0.9 },
         depthWeight: { value: 1.5 },
-        dither: { value: 0.6 },
+        dither: { value: 0.3 },
         terrainNormalWeight: { value: 0.35 },
         lineDim: { value: 0.45 },
         exposure: { value: 1.25 },
         lumFloor: { value: 0.03 },
         pastel: { value: 0.3 },
         edgeGain: { value: 1 },
-        cellFill: { value: 0.16 },
+        cellFill: { value: 1 },        // global scale on the per-set fill
         cameraNear: { value: 0.1 },
         cameraFar: { value: 200 },
         fogNear: { value: 1e4 },

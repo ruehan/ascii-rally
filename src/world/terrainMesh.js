@@ -22,7 +22,7 @@ SURFACE_COLORS[SURFACE_IDS.asphalt] = '#9aa3b5';
 SURFACE_COLORS[SURFACE_IDS.kerb] = '#d94a3a';
 SURFACE_COLORS[SURFACE_IDS.pad] = '#ddd3bc';
 SURFACE_COLORS[SURFACE_IDS.sand] = '#e3d3a4';
-SURFACE_COLORS[SURFACE_IDS.snow] = '#f2f6ff';
+SURFACE_COLORS[SURFACE_IDS.snow] = '#aebdd2'; // packed, darker than the snowfield
 SURFACE_COLORS[SURFACE_IDS.ice] = '#bfe3ff';
 SURFACE_COLORS[SURFACE_IDS.dune] = '#e9c98a';
 for (let i = 0; i < 16; i++) SURFACE_COLORS[i] ??= '#000000';
