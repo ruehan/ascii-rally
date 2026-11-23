@@ -13,6 +13,7 @@
     background: rgba(7, 9, 12, .7); padding: 10px 12px; border: 1px solid #2a2e37;
   }
   .hud b { color: #5dff8a; }
+  .calls { font-size: 11px; font-weight: normal; color: #6b7480; text-align: right; }
   .speed { position: fixed; right: 16px; bottom: 16px; color: #5dff8a;
     font: bold 20px ui-monospace, Menlo, monospace; white-space: pre; pointer-events: none; }
 </style>
@@ -25,7 +26,7 @@ C             컬러 ↔ 단색
 E             윤곽선 켜기/끄기
 + / -         글자 크기
 R             리셋</div>
-<div class="speed"><span id="speed">  0</span> km/h</div>
+<div class="speed"><span id="speed">  0</span> km/h<div class="calls">draw <span id="calls">0</span></div></div>
 <script type="module" src="/src/main.js"></script>
 </body>
 </html>

@@ -1,25 +1,5 @@
 import * as THREE from 'three';
-
-/**
- * Character sets per material. Order inside a string doesn't matter —
- * glyphs are measured and sorted by ink coverage at startup.
- * Assign with `setCharset(object, CHARSET.X)`.
- */
-export const CHARSET = { DEFAULT: 0, GROUND: 1, FOLIAGE: 2, ROCK: 3, PILLAR: 4, CAR: 5, GOLD: 6, WOOD: 7 };
-
-const CHARSET_GLYPHS = [
-  /* DEFAULT */ ` .'\`^",:;Il!i><~+_-?][}{1)(|tfjrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&8%B@$`,
-  /* GROUND  */ ` .,'\`:;-~`,
-  /* FOLIAGE */ ` .,'^*vwYV&%#@`,
-  /* ROCK    */ ` .,:;ocoO0Q@`,
-  /* PILLAR  */ ` .:-=≡#H▓█`,
-  /* CAR     */ ` .:=+*xX#$`,
-  /* GOLD    */ ` .:+*oO@$§`,
-  /* WOOD    */ ` .:!|lI#`,
-];
-
-// Edge glyphs: 4 orientations (see shader) + corner.
-const EDGE_GLYPHS = ['|', '\\', '-', '/', '+'];
+import { MAX_SETS, CHARSET_GLYPHS, EDGE_GLYPHS } from './charsets.js';
 
 const ATLAS_COLS = 16;
 const GLYPH_PX = 48;
@@ -72,19 +52,19 @@ function createGlyphAtlas(glyphs) {
   return { texture: tex, rows };
 }
 
-/** Tags every mesh under `object` with a charset id. */
-export function setCharset(object, id) {
-  object.traverse(o => { if (o.isMesh) o.userData.charset = id; });
-}
-
 // Info pass: flat view-space normal in RGB, charset id in A.
+// Handles InstancedMesh (USE_INSTANCING is defined by three for those draws).
 function createInfoMaterial(charsetId) {
   return new THREE.ShaderMaterial({
     uniforms: { charsetId: { value: charsetId } },
     vertexShader: /* glsl */ `
       varying vec3 vViewPos;
       void main() {
-        vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        vec4 p = vec4(position, 1.0);
+        #ifdef USE_INSTANCING
+          p = instanceMatrix * p;
+        #endif
+        vec4 mv = modelViewMatrix * p;
         vViewPos = mv.xyz;
         gl_Position = projectionMatrix * mv;
       }
@@ -108,7 +88,7 @@ const vertexShader = /* glsl */ `
 
 const fragmentShader = /* glsl */ `
   #define PI 3.14159265
-  #define MAX_SETS 8
+  #define MAX_SETS ${MAX_SETS}
 
   uniform sampler2D tScene;
   uniform sampler2D tDepth;
@@ -161,6 +141,7 @@ const fragmentShader = /* glsl */ `
     // Pick this cell's charset and map brightness into its ramp.
     // Dither nudges cells near a step boundary to the neighbouring glyph.
     int set = int(floor(texture2D(tInfo, uv).a * 255.0 + 0.5));
+    set = clamp(set, 0, MAX_SETS - 1);
     float start = rampStart[set];
     float len = rampLen[set];
     float l = clamp(lum + (hash(cell) - 0.5) * dither / len, 0.0, 0.999);
@@ -227,6 +208,10 @@ const fragmentShader = /* glsl */ `
  * Renders a scene to low-res targets (colour+depth, normals+charset), then
  * draws it as ASCII glyphs with per-material charsets and edge characters.
  *
+ * Info pass: meshes are swapped to a per-charset material. The mesh list is
+ * cached; it rebuilds when top-level children change or `invalidate()` is
+ * called (call it after adding/removing nested meshes or changing charsets).
+ *
  * Objects with `userData.noEdges = true` are hidden from the info pass.
  */
 export class AsciiRenderer {
@@ -246,6 +231,7 @@ export class AsciiRenderer {
     this.infoMaterials = CHARSET_GLYPHS.map((_, i) => createInfoMaterial(i));
 
     // Build atlas: every charset ramp back to back, then edge glyphs.
+    // Unused shader slots fall back to DEFAULT.
     const glyphs = [];
     const rampStart = [];
     const rampLen = [];
@@ -254,6 +240,10 @@ export class AsciiRenderer {
       rampStart.push(glyphs.length);
       rampLen.push(sorted.length);
       glyphs.push(...sorted);
+    }
+    while (rampStart.length < MAX_SETS) {
+      rampStart.push(rampStart[0]);
+      rampLen.push(rampLen[0]);
     }
     const edgeStart = glyphs.length;
     glyphs.push(...EDGE_GLYPHS);
@@ -293,8 +283,19 @@ export class AsciiRenderer {
     this.quadScene = new THREE.Scene();
     this.quadCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
     this.quadScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.material));
-    this._hidden = [];
-    this._swapped = [];
+
+    this._scene = null;
+    this._meshes = [];      // meshes to swap in the info pass
+    this._noEdges = [];     // objects hidden in the info pass
+    this._saved = [];       // original materials during swap
+    this._hidden = [];      // objects actually hidden this frame
+    this._dirty = true;
+    this._onChildChange = () => { this._dirty = true; };
+  }
+
+  /** Force the info-pass mesh list to rebuild next frame. */
+  invalidate() {
+    this._dirty = true;
   }
 
   setSize(width, height) {
@@ -326,6 +327,30 @@ export class AsciiRenderer {
     u.value = u.value ? 0 : 1;
   }
 
+  _watch(scene) {
+    if (this._scene === scene) return;
+    if (this._scene) {
+      this._scene.removeEventListener('childadded', this._onChildChange);
+      this._scene.removeEventListener('childremoved', this._onChildChange);
+    }
+    scene.addEventListener('childadded', this._onChildChange);
+    scene.addEventListener('childremoved', this._onChildChange);
+    this._scene = scene;
+    this._dirty = true;
+  }
+
+  _rebuild(scene) {
+    this._meshes.length = 0;
+    this._noEdges.length = 0;
+    const walk = o => {
+      if (o.userData.noEdges) { this._noEdges.push(o); return; }
+      if (o.isMesh) this._meshes.push(o);
+      for (const c of o.children) walk(c);
+    };
+    walk(scene);
+    this._dirty = false;
+  }
+
   render(scene, camera) {
     const r = this.renderer;
     const u = this.material.uniforms;
@@ -336,36 +361,40 @@ export class AsciiRenderer {
       u.fogFar.value = scene.fog.far;
     }
 
+    this._watch(scene);
+    if (this._dirty) this._rebuild(scene);
+
     // 1) Colour + depth.
     r.setRenderTarget(this.target);
     r.render(scene, camera);
 
-    // 2) Info pass: normals + charset id. Swap each mesh to its charset's material.
+    // 2) Info pass: normals + charset id.
     const bg = scene.background;
     const fog = scene.fog;
     const shadowAuto = r.shadowMap.autoUpdate;
     scene.background = null;
     scene.fog = null;
     r.shadowMap.autoUpdate = false; // shadows already rendered in pass 1
+
+    const meshes = this._meshes;
+    const saved = this._saved;
+    saved.length = meshes.length;
+    for (let i = 0; i < meshes.length; i++) {
+      const m = meshes[i];
+      saved[i] = m.material;
+      m.material = this.infoMaterials[m.userData.charset ?? 0] ?? this.infoMaterials[0];
+    }
     this._hidden.length = 0;
-    this._swapped.length = 0;
-    scene.traverse(o => {
-      if (!o.visible) return;
-      if (o.userData.noEdges) {
-        o.visible = false;
-        this._hidden.push(o);
-      } else if (o.isMesh) {
-        this._swapped.push(o, o.material);
-        o.material = this.infoMaterials[o.userData.charset ?? 0];
-      }
-    });
+    for (const o of this._noEdges) {
+      if (o.visible) { o.visible = false; this._hidden.push(o); }
+    }
 
     r.setRenderTarget(this.infoTarget);
     r.setClearColor(0x000000, 0); // alpha 0 -> DEFAULT charset for background
     r.clear();
     r.render(scene, camera);
 
-    for (let i = 0; i < this._swapped.length; i += 2) this._swapped[i].material = this._swapped[i + 1];
+    for (let i = 0; i < meshes.length; i++) meshes[i].material = saved[i];
     for (const o of this._hidden) o.visible = true;
     scene.background = bg;
     scene.fog = fog;

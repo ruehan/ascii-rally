@@ -1,19 +1,25 @@
 import * as THREE from 'three';
-import { AsciiRenderer } from './ascii.js';
-import { createWorld } from './world.js';
+import { AsciiRenderer } from './render/ascii.js';
+import { createLighting } from './render/lighting.js';
+import { createWorld } from './world/world.js';
 import { Car } from './car.js';
 
 const renderer = new THREE.WebGLRenderer({ antialias: false });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.type = THREE.PCFShadowMap;
+renderer.info.autoReset = false; // count draw calls across all passes per frame
 document.getElementById('app').appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 200);
 const ascii = new AsciiRenderer(renderer, { cellSize: 8 });
 
-const { colliders, sun, monument } = createWorld(scene);
+const { colliders, monument } = createWorld(scene);
+const lighting = createLighting(scene);
+// Nothing past the fog is visible; keep the far plane tight for depth precision.
+camera.far = scene.fog.far + 10;
+camera.updateProjectionMatrix();
 const car = new Car(scene);
 car.object.position.set(0, 0, 4);
 
@@ -56,9 +62,11 @@ resize();
 // Fixed-angle follow camera (isometric-ish, always same view direction).
 const CAM_OFFSET = new THREE.Vector3(0, 16, 16);
 const camTarget = new THREE.Vector3();
+const camGoal = new THREE.Vector3();
 camera.position.copy(car.object.position).add(CAM_OFFSET);
 
 const hudSpeed = document.getElementById('speed');
+const hudCalls = document.getElementById('calls');
 const clock = new THREE.Clock();
 
 function tick() {
@@ -69,14 +77,15 @@ function tick() {
   monument.children.forEach((ring, i) => (ring.rotation.z = t * (0.4 + i * 0.3) * (i % 2 ? -1 : 1)));
 
   camTarget.copy(car.object.position);
-  camera.position.lerp(camTarget.clone().add(CAM_OFFSET), 1 - Math.exp(-dt * 4));
+  camera.position.lerp(camGoal.copy(camTarget).add(CAM_OFFSET), 1 - Math.exp(-dt * 4));
   camera.lookAt(camTarget);
 
   // Shadow camera follows the car so shadows stay sharp nearby.
-  sun.position.set(camTarget.x + 20, 35, camTarget.z + 10);
-  sun.target.position.copy(camTarget);
+  lighting.follow(camTarget);
 
+  renderer.info.reset();
   ascii.render(scene, camera);
+  hudCalls.textContent = renderer.info.render.calls;
   hudSpeed.textContent = String(Math.round(Math.abs(car.speed) * 3.6)).padStart(3, ' ');
   requestAnimationFrame(tick);
 }

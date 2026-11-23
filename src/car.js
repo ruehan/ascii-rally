@@ -1,6 +1,7 @@
 import * as THREE from 'three';
-import { WORLD_RADIUS } from './world.js';
-import { CHARSET, setCharset } from './ascii.js';
+import { WORLD_RADIUS } from './world/world.js';
+import { CHARSET, setCharset } from './render/charsets.js';
+import { material } from './world/materials.js';
 
 const ACCEL = 28;
 const BRAKE = 40;
@@ -13,7 +14,7 @@ const CAR_RADIUS = 1.3;
 function box(w, h, d, color) {
   const m = new THREE.Mesh(
     new THREE.BoxGeometry(w, h, d),
-    new THREE.MeshStandardMaterial({ color, flatShading: true }),
+    material(color),
   );
   m.castShadow = true;
   return m;
@@ -41,7 +42,7 @@ export class Car {
     this.wheels = [];
     const wheelGeo = new THREE.CylinderGeometry(0.42, 0.42, 0.35, 10);
     wheelGeo.rotateZ(Math.PI / 2);
-    const wheelMat = new THREE.MeshStandardMaterial({ color: '#2b2b2b', flatShading: true });
+    const wheelMat = material('#2b2b2b');
     for (const [x, z] of [[-0.95, -1.05], [0.95, -1.05], [-0.95, 1.05], [0.95, 1.05]]) {
       const pivot = new THREE.Group();
       pivot.position.set(x, 0.42, z);
