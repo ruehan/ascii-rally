@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { MAX_SETS, CHARSET_GLYPHS, EDGE_GLYPHS } from './charsets.js';
+import { MAX_SETS, CHARSET_GLYPHS, EDGE_GLYPHS, CHARSET } from './charsets.js';
+import { cutawayUniforms, CUTAWAY_GLSL } from './cutaway.js';
 
 const ATLAS_COLS = 16;
 const GLYPH_PX = 48;
@@ -54,11 +55,14 @@ function createGlyphAtlas(glyphs) {
 
 // Info pass: flat view-space normal in RGB, charset id in A.
 // Handles InstancedMesh (USE_INSTANCING is defined by three for those draws).
-function createInfoMaterial(charsetId) {
+// `cut` variants discard the same fragments as cutaway colour materials.
+function createInfoMaterial(charsetId, cut = false) {
   return new THREE.ShaderMaterial({
-    uniforms: { charsetId: { value: charsetId } },
+    uniforms: { charsetId: { value: charsetId }, ...(cut ? cutawayUniforms : {}) },
+    defines: cut ? { CUTAWAY: '' } : {},
     vertexShader: /* glsl */ `
       varying vec3 vViewPos;
+      varying vec4 vClip;
       void main() {
         vec4 p = vec4(position, 1.0);
         #ifdef USE_INSTANCING
@@ -67,12 +71,20 @@ function createInfoMaterial(charsetId) {
         vec4 mv = modelViewMatrix * p;
         vViewPos = mv.xyz;
         gl_Position = projectionMatrix * mv;
+        vClip = gl_Position;
       }
     `,
     fragmentShader: /* glsl */ `
       uniform float charsetId;
       varying vec3 vViewPos;
+      varying vec4 vClip;
+      #ifdef CUTAWAY
+        ${CUTAWAY_GLSL}
+      #endif
       void main() {
+        #ifdef CUTAWAY
+          if (cutaway(vClip, -vViewPos.z)) discard;
+        #endif
         vec3 n = normalize(cross(dFdx(vViewPos), dFdy(vViewPos)));
         gl_FragColor = vec4(n * 0.5 + 0.5, charsetId / 255.0);
       }
@@ -108,6 +120,12 @@ const fragmentShader = /* glsl */ `
   uniform float edgeThreshold;
   uniform float depthWeight;
   uniform float dither;
+  uniform float terrainNormalWeight; // terrain normals barely count toward edges
+  uniform float lineDim;             // contour / road-edge lines darker than edges
+  uniform float exposure;
+  uniform float lumFloor;
+  uniform float pastel;              // 0 = full-saturation hue, 1 = white
+  uniform float edgeGain;
   uniform float cameraNear;
   uniform float cameraFar;
   uniform float fogNear;
@@ -136,12 +154,16 @@ const fragmentShader = /* glsl */ `
     // centre averages a 2x2 block — cheap anti-aliasing.
     vec3 col = texture2D(tScene, uv).rgb;
     col = pow(max(col, 0.0), vec3(1.0 / 2.2)); // render target is linear; approx sRGB
-    float lum = clamp(dot(col, vec3(0.299, 0.587, 0.114)), 0.0, 1.0);
+    float lum = clamp(dot(col, vec3(0.299, 0.587, 0.114)) * exposure + lumFloor, 0.0, 1.0);
+
+    // Decode info alpha: <64 charset, 64..127 terrain charset, >=128 terrain line.
+    float aByte = floor(texture2D(tInfo, uv).a * 255.0 + 0.5);
+    bool isLine = aByte >= 128.0;
+    int set = isLine ? ${CHARSET.TERRA_LOW} : int(aByte >= 64.0 ? aByte - 64.0 : aByte);
+    set = clamp(set, 0, MAX_SETS - 1);
 
     // Pick this cell's charset and map brightness into its ramp.
     // Dither nudges cells near a step boundary to the neighbouring glyph.
-    int set = int(floor(texture2D(tInfo, uv).a * 255.0 + 0.5));
-    set = clamp(set, 0, MAX_SETS - 1);
     float start = rampStart[set];
     float len = rampLen[set];
     float l = clamp(lum + (hash(cell) - 0.5) * dither / len, 0.0, 0.999);
@@ -156,7 +178,9 @@ const fragmentShader = /* glsl */ `
       for (int i = -1; i <= 1; i++) {
         for (int j = -1; j <= 1; j++) {
           vec2 suv = cellUv(cell + vec2(float(i), float(j)));
-          vec4 s = vec4(texture2D(tInfo, suv).rgb, linearDepth(suv) / dCenter * depthWeight);
+          vec4 inf = texture2D(tInfo, suv);
+          float w = inf.a * 255.0 >= 63.5 ? terrainNormalWeight : 1.0;
+          vec4 s = vec4(inf.rgb * w, linearDepth(suv) / dCenter * depthWeight);
           float wx = float(i) * (j == 0 ? 2.0 : 1.0);
           float wy = float(j) * (i == 0 ? 2.0 : 1.0);
           gx += s * wx;
@@ -185,6 +209,9 @@ const fragmentShader = /* glsl */ `
         }
         idx = edgeStart + k;
         edge = 1.0;
+      } else if (isLine && fade > 0.0) {
+        idx = edgeStart + mod(aByte - 128.0, 4.0);
+        edge = -1.0; // terrain line
       }
     }
 
@@ -197,8 +224,9 @@ const fragmentShader = /* glsl */ `
     // Glyph density carries brightness, so normalise colour to full hue.
     float peak = max(max(col.r, col.g), max(col.b, 1e-3));
     vec3 hue = col / peak;
-    vec3 tint = mix(monoColor, hue, colorMode);
-    tint = mix(tint, vec3(1.0), edge * 0.35); // edges a touch brighter
+    vec3 tint = mix(monoColor, mix(hue, vec3(1.0), pastel), colorMode);
+    if (edge > 0.0) tint = mix(tint, vec3(1.0), 0.35) * edgeGain; // edges a touch brighter
+    else if (edge < 0.0) tint = mix(tint, background, lineDim);
 
     gl_FragColor = vec4(mix(background, tint, glyph), 1.0);
   }
@@ -229,6 +257,7 @@ export class AsciiRenderer {
       magFilter: THREE.NearestFilter,
     });
     this.infoMaterials = CHARSET_GLYPHS.map((_, i) => createInfoMaterial(i));
+    this.infoMaterialsCut = CHARSET_GLYPHS.map((_, i) => createInfoMaterial(i, true));
 
     // Build atlas: every charset ramp back to back, then edge glyphs.
     // Unused shader slots fall back to DEFAULT.
@@ -271,6 +300,12 @@ export class AsciiRenderer {
         edgeThreshold: { value: 0.9 },
         depthWeight: { value: 1.5 },
         dither: { value: 0.6 },
+        terrainNormalWeight: { value: 0.35 },
+        lineDim: { value: 0.45 },
+        exposure: { value: 1.25 },
+        lumFloor: { value: 0.03 },
+        pastel: { value: 0.3 },
+        edgeGain: { value: 1 },
         cameraNear: { value: 0.1 },
         cameraFar: { value: 200 },
         fogNear: { value: 1e4 },
@@ -382,7 +417,8 @@ export class AsciiRenderer {
     for (let i = 0; i < meshes.length; i++) {
       const m = meshes[i];
       saved[i] = m.material;
-      m.material = this.infoMaterials[m.userData.charset ?? 0] ?? this.infoMaterials[0];
+      const table = m.material.userData.cutaway ? this.infoMaterialsCut : this.infoMaterials;
+      m.material = m.userData.infoMaterial ?? table[m.userData.charset ?? 0] ?? table[0];
     }
     this._hidden.length = 0;
     for (const o of this._noEdges) {

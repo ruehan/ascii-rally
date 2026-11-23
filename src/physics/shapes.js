@@ -1,14 +1,17 @@
 /**
  * Shared collider schema, read by both the arcade physics and (later) Rapier.
- * All positions are on the XZ plane in metres. `h` (height) is unused by the
- * arcade solver but kept so a 3D engine can build real shapes.
+ * All positions are on the XZ plane in metres; `y`/`h` give the vertical
+ * extent so a 3D engine can build real shapes.
  *
- *   { type: 'circle', x, z, r, h }
- *   { type: 'box',    x, z, hx, hz, rot, h }   // half extents, yaw in radians
+ *   { type: 'circle', x, z, r, h, y }
+ *   { type: 'box',    x, z, hx, hz, rot, h, y }   // half extents, yaw in radians (three.js rotation.y)
+ *
+ * `y` is the base height; the shape spans y..y+h. The arcade solver skips
+ * shapes the car is above (jumps clear low obstacles).
  */
 
-export const circle = (x, z, r, h = 2) => ({ type: 'circle', x, z, r, h });
-export const box = (x, z, hx, hz, rot = 0, h = 2) => ({ type: 'box', x, z, hx, hz, rot, h });
+export const circle = (x, z, r, h = 2, y = 0) => ({ type: 'circle', x, z, r, h, y });
+export const box = (x, z, hx, hz, rot = 0, h = 2, y = 0) => ({ type: 'box', x, z, hx, hz, rot, h, y });
 
 /** Axis-aligned bounds of a shape: [minX, minZ, maxX, maxZ]. */
 export function shapeBounds(s) {

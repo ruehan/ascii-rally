@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ASCII World</title>
+<title>Stage ~/</title>
 <style>
   html, body { margin: 0; height: 100%; overflow: hidden; background: #07090c; }
   #app canvas { display: block; }
@@ -20,13 +20,13 @@
 </head>
 <body>
 <div id="app"></div>
-<div class="hud"><b>ASCII WORLD</b> v0.1
+<div class="hud"><b>STAGE ~/</b> v0.2
 WASD / 방향키  운전
 C             컬러 ↔ 단색
-E             윤곽선 켜기/끄기
+G             윤곽선 켜기/끄기
 + / -         글자 크기
-R             리셋</div>
-<div class="speed"><span id="speed">  0</span> km/h<div class="calls">draw <span id="calls">0</span></div></div>
+R             출발점으로</div>
+<div class="speed"><span id="speed">  0</span> km/h<div class="calls">alt <span id="alt">0m</span> · draw <span id="calls">0</span></div></div>
 <script type="module" src="/src/main.js"></script>
 </body>
 </html>

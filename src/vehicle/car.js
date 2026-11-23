@@ -41,14 +41,14 @@ export class CarView {
     }
 
     setCharset(this.object, CHARSET.CAR);
+    this.object.rotation.order = 'YXZ'; // heading, then pitch, then roll
     scene.add(this.object);
   }
 
   sync(v, alpha, dt) {
-    const pos = this.object.position;
-    pos.x = v.prevX + (v.x - v.prevX) * alpha;
-    pos.z = v.prevZ + (v.z - v.prevZ) * alpha;
-    this.object.rotation.y = v.prevHeading + (v.heading - v.prevHeading) * alpha;
+    const lerp = (a, b) => a + (b - a) * alpha;
+    this.object.position.set(lerp(v.prevX, v.x), lerp(v.prevY, v.y), lerp(v.prevZ, v.z));
+    this.object.rotation.set(lerp(v.prevPitch, v.pitch), lerp(v.prevHeading, v.heading), -lerp(v.prevRoll, v.roll));
 
     const spin = (v.speed * dt) / WHEEL_RADIUS;
     for (const w of this.wheels) {

@@ -1,7 +1,10 @@
 import * as THREE from 'three';
 import { AsciiRenderer } from './render/ascii.js';
 import { createLighting } from './render/lighting.js';
-import { createWorld } from './world/world.js';
+import { createCameraRig } from './render/camera.js';
+import { updateCutaway } from './render/cutaway.js';
+import { buildWorld } from './world/build.js';
+import map from './world/map.js';
 import { ArcadePhysics } from './physics/arcade.js';
 import { CarView } from './vehicle/car.js';
 import { readIntents } from './vehicle/controller.js';
@@ -21,25 +24,37 @@ const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 200);
 const ascii = new AsciiRenderer(renderer, { cellSize: 8 });
 
 // --- World + physics ------------------------------------------------------
-const { colliders, monument, bounds } = createWorld(scene);
+const world = buildWorld(scene, map);
+const { terrain, surfaces } = world;
 const lighting = createLighting(scene);
 // Nothing past the fog is visible; keep the far plane tight for depth precision.
 camera.far = scene.fog.far + 10;
 camera.updateProjectionMatrix();
 
-const SPAWN = { pos: [0, 4], heading: 0 };
-const physics = new ArcadePhysics({ bounds });
-colliders.forEach(s => physics.addStatic(s));
-const vehicle = physics.createVehicle(SPAWN);
+const physics = new ArcadePhysics({
+  bounds: world.bounds,
+  terrain: { heightAt: terrain.heightAt, slopeAlong: terrain.slopeAlong, surfaceAt: surfaces.surfaceAt },
+});
+world.colliders.forEach(s => physics.addStatic(s));
+const vehicle = physics.createVehicle({ pos: world.spawn.pos, heading: world.spawn.heading });
 const car = new CarView(scene);
+const rig = createCameraRig(camera, terrain);
+
+// Respawn point: last place the car was settled on a road, refreshed every second.
+const safe = { pos: [...world.spawn.pos], heading: world.spawn.heading, timer: 0 };
+function respawn(at = safe) {
+  physics.resetVehicle(vehicle, at.pos, at.heading);
+  car.sync(vehicle, 1, 0);
+  rig.snap(car.object);
+}
 
 // --- Input ----------------------------------------------------------------
 const input = createInput();
 input.onPress('KeyC', () => ascii.toggleColor());
-input.onPress('KeyE', () => ascii.toggleEdges());
+input.onPress('KeyG', () => ascii.toggleEdges());
 input.onPress(['Equal', 'NumpadAdd'], () => ascii.setCellSize(Math.min(24, ascii.cellSize + 2)));
 input.onPress(['Minus', 'NumpadSubtract'], () => ascii.setCellSize(Math.max(6, ascii.cellSize - 2)));
-input.onPress('KeyR', () => physics.resetVehicle(vehicle, SPAWN.pos, SPAWN.heading));
+input.onPress('KeyR', () => respawn(world.spawn));
 
 // --- Resize ---------------------------------------------------------------
 function resize() {
@@ -52,40 +67,51 @@ function resize() {
 }
 window.addEventListener('resize', resize);
 resize();
-
-// --- Camera ---------------------------------------------------------------
-// Fixed-angle follow camera (isometric-ish, always same view direction).
-const CAM_OFFSET = new THREE.Vector3(0, 16, 16);
-const camTarget = new THREE.Vector3(SPAWN.pos[0], 0, SPAWN.pos[1]);
-const camGoal = new THREE.Vector3();
-camera.position.copy(camTarget).add(CAM_OFFSET);
+respawn(world.spawn);
 
 // --- Loop -----------------------------------------------------------------
 const hudSpeed = document.getElementById('speed');
+const hudAlt = document.getElementById('alt');
 const hudCalls = document.getElementById('calls');
+const carFocus = new THREE.Vector3();
 
 const loop = createLoop({
   step(h) {
     physics.setIntents(vehicle, readIntents(input.state));
     physics.step(h);
+
+    // Fell into the sea: back to the last safe spot.
+    if (vehicle.y < world.waterLevel - 0.3) respawn();
+    safe.timer += h;
+    if (safe.timer > 1 && !vehicle.airborne && vehicle.surface && vehicle.surface !== 'grass') {
+      safe.timer = 0;
+      safe.pos = [vehicle.x, vehicle.z];
+      safe.heading = vehicle.heading;
+    }
   },
   render(alpha, dt) {
     car.sync(vehicle, alpha, dt);
+    rig.update(dt, car.object, vehicle);
+    lighting.follow(rig.target); // shadows stay sharp around the car
 
-    camTarget.copy(car.object.position);
-    camera.position.lerp(camGoal.copy(camTarget).add(CAM_OFFSET), 1 - Math.exp(-dt * 4));
-    camera.lookAt(camTarget);
-    lighting.follow(camTarget); // shadows stay sharp around the car
+    camera.updateMatrixWorld();
+    updateCutaway(camera, carFocus.copy(car.object.position).setY(car.object.position.y + 1), 0.16);
 
     renderer.info.reset();
     ascii.render(scene, camera);
     hudCalls.textContent = renderer.info.render.calls;
     hudSpeed.textContent = String(Math.round(Math.abs(vehicle.speed) * 3.6)).padStart(3, ' ');
+    hudAlt.textContent = `${Math.round(vehicle.y)}m ${vehicle.surface ?? ''}`;
   },
 });
 
-loop.onUpdate((dt, t) => {
-  monument.children.forEach((ring, i) => (ring.rotation.z = t * (0.4 + i * 0.3) * (i % 2 ? -1 : 1)));
-});
-
+loop.onUpdate((dt, t) => world.update(dt, t));
 loop.start();
+
+// Dev-only handle for debugging / screenshots from the console.
+if (import.meta.env.DEV) {
+  window.__stage = {
+    physics, vehicle, terrain, surfaces,
+    teleport(x, z, heading = 0) { respawn({ pos: [x, z], heading }); },
+  };
+}
