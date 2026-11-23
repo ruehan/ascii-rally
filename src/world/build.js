@@ -52,8 +52,8 @@ export function buildWorld(scene, map) {
     pads: map.zones.map(z => ({ pos: z.pos, r: z.r, surface: z.surface })),
   });
 
-  scene.background = new THREE.Color('#0b0d0a');
-  scene.fog = new THREE.Fog('#0b0d0a', 40, 100);
+  scene.background = new THREE.Color('#121612');
+  scene.fog = new THREE.Fog('#121612', 55, 130);
 
   const ground = createTerrainMesh(terrain, surfaces);
   scene.add(ground);

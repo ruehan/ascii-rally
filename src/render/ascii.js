@@ -3,8 +3,9 @@ import { MAX_SETS, CHARSET_GLYPHS, EDGE_GLYPHS, CHARSET } from './charsets.js';
 import { cutawayUniforms, CUTAWAY_GLSL } from './cutaway.js';
 
 const ATLAS_COLS = 16;
-const GLYPH_PX = 48;
-const FONT = `bold ${GLYPH_PX * 0.9}px ui-monospace, Menlo, monospace`;
+const GLYPH_PX = 48; // resolution used only to measure ink coverage
+const font = px => `bold ${Math.round(px * 0.95)}px ui-monospace, Menlo, monospace`;
+const FONT = font(GLYPH_PX);
 
 /** Sorts glyphs from least to most ink so brightness maps to density. */
 function sortByCoverage(chars) {
@@ -27,28 +28,32 @@ function sortByCoverage(chars) {
   return measured.sort((a, b) => a.ink - b.ink).map(m => m.ch);
 }
 
-/** Grid atlas of glyphs, ATLAS_COLS per row. */
-function createGlyphAtlas(glyphs) {
+/**
+ * Grid atlas of glyphs, ATLAS_COLS per row, rendered at exactly `px` pixels
+ * per glyph (= on-screen cell size) and sampled with nearest filtering, so
+ * small cells stay crisp instead of blurring thin strokes into grey.
+ */
+function createGlyphAtlas(glyphs, px) {
   const rows = Math.ceil(glyphs.length / ATLAS_COLS);
   const canvas = document.createElement('canvas');
-  canvas.width = GLYPH_PX * ATLAS_COLS;
-  canvas.height = GLYPH_PX * rows;
+  canvas.width = px * ATLAS_COLS;
+  canvas.height = px * rows;
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.fillStyle = '#fff';
-  ctx.font = FONT;
+  ctx.font = font(px);
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   glyphs.forEach((ch, i) => {
-    const x = (i % ATLAS_COLS) * GLYPH_PX + GLYPH_PX / 2;
-    const y = Math.floor(i / ATLAS_COLS) * GLYPH_PX + GLYPH_PX / 2 + GLYPH_PX * 0.04;
+    const x = (i % ATLAS_COLS) * px + px / 2;
+    const y = Math.floor(i / ATLAS_COLS) * px + px / 2 + px * 0.04;
     ctx.fillText(ch, x, y);
   });
 
   const tex = new THREE.CanvasTexture(canvas);
-  tex.minFilter = THREE.LinearFilter;
-  tex.magFilter = THREE.LinearFilter;
+  tex.minFilter = THREE.NearestFilter;
+  tex.magFilter = THREE.NearestFilter;
   tex.generateMipmaps = false;
   return { texture: tex, rows };
 }
@@ -126,6 +131,7 @@ const fragmentShader = /* glsl */ `
   uniform float lumFloor;
   uniform float pastel;              // 0 = full-saturation hue, 1 = white
   uniform float edgeGain;
+  uniform float cellFill;            // faint colour wash behind each glyph
   uniform float cameraNear;
   uniform float cameraFar;
   uniform float fogNear;
@@ -228,7 +234,10 @@ const fragmentShader = /* glsl */ `
     if (edge > 0.0) tint = mix(tint, vec3(1.0), 0.35) * edgeGain; // edges a touch brighter
     else if (edge < 0.0) tint = mix(tint, background, lineDim);
 
-    gl_FragColor = vec4(mix(background, tint, glyph), 1.0);
+    // Lit cells get a faint wash of their colour behind the glyph; empty
+    // (dark) cells stay pure background so the terminal look survives.
+    vec3 cellBg = background + tint * cellFill * smoothstep(0.03, 0.6, lum);
+    gl_FragColor = vec4(mix(cellBg, tint, glyph), 1.0);
   }
 `;
 
@@ -276,7 +285,9 @@ export class AsciiRenderer {
     }
     const edgeStart = glyphs.length;
     glyphs.push(...EDGE_GLYPHS);
-    const atlas = createGlyphAtlas(glyphs);
+    this._glyphs = glyphs;
+    this._atlasPx = 0;
+    const atlas = createGlyphAtlas(glyphs, GLYPH_PX);
 
     this.material = new THREE.ShaderMaterial({
       vertexShader,
@@ -295,7 +306,7 @@ export class AsciiRenderer {
         edgeStart: { value: edgeStart },
         colorMode: { value: 1 },
         monoColor: { value: new THREE.Color('#5dff8a') },
-        background: { value: new THREE.Color('#07090c') },
+        background: { value: new THREE.Color('#0d1012') },
         edgesOn: { value: 1 },
         edgeThreshold: { value: 0.9 },
         depthWeight: { value: 1.5 },
@@ -306,6 +317,7 @@ export class AsciiRenderer {
         lumFloor: { value: 0.03 },
         pastel: { value: 0.3 },
         edgeGain: { value: 1 },
+        cellFill: { value: 0.16 },
         cameraNear: { value: 0.1 },
         cameraFar: { value: 200 },
         fogNear: { value: 1e4 },
@@ -340,10 +352,22 @@ export class AsciiRenderer {
     const cell = this.cellSize * dpr;
     this.material.uniforms.resolution.value.set(bw, bh);
     this.material.uniforms.cellSize.value = cell;
+    this._ensureAtlas(Math.max(4, Math.round(cell)));
     const tw = Math.ceil(bw / cell) * 2;
     const th = Math.ceil(bh / cell) * 2;
     this.target.setSize(tw, th);
     this.infoTarget.setSize(tw, th);
+  }
+
+  /** Re-renders the glyph atlas when the on-screen cell size changes. */
+  _ensureAtlas(px) {
+    if (px === this._atlasPx) return;
+    const u = this.material.uniforms;
+    u.tGlyphs.value.dispose();
+    const atlas = createGlyphAtlas(this._glyphs, px);
+    u.tGlyphs.value = atlas.texture;
+    u.atlasRows.value = atlas.rows;
+    this._atlasPx = px;
   }
 
   setCellSize(px) {

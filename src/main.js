@@ -21,7 +21,7 @@ document.getElementById('app').appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 200);
-const ascii = new AsciiRenderer(renderer, { cellSize: 8 });
+const ascii = new AsciiRenderer(renderer, { cellSize: 6 });
 
 // --- World + physics ------------------------------------------------------
 const world = buildWorld(scene, map);

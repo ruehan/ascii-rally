@@ -9,9 +9,9 @@ const SUN_OFFSET = new THREE.Vector3(20, 35, 10);
  * Returns `follow(target)` to call each frame.
  */
 export function createLighting(scene) {
-  scene.add(new THREE.HemisphereLight('#bcd7ff', '#2a2018', 0.9));
+  scene.add(new THREE.HemisphereLight('#d6e6ff', '#5a4a36', 1.5));
 
-  const sun = new THREE.DirectionalLight('#fff4e0', 2.2);
+  const sun = new THREE.DirectionalLight('#fff1d6', 2.8);
   sun.castShadow = true;
   sun.shadow.mapSize.set(SHADOW_MAP, SHADOW_MAP);
   Object.assign(sun.shadow.camera, {
