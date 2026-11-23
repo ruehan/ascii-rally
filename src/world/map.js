@@ -8,12 +8,13 @@ import core from './regions/core.js';
 import gp from './regions/gp.js';
 import highway, { loop24 } from './regions/highway.js';
 import snow from './regions/snow.js';
+import desert from './regions/desert.js';
 
 /**
  * Regions are concatenated in order. Terrain features apply in type order
  * (see terrain.js), so region order only matters within a type.
  */
-const regions = [world, core, gp, highway, snow];
+const regions = [world, core, gp, highway, snow, desert];
 const all = key => regions.flatMap(r => r[key] ?? []);
 
 export default {

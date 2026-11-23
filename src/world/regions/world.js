@@ -38,8 +38,7 @@ export default {
     // Hillclimb hill (hidden road arrives later).
     { type: 'hill', pos: [-330, 175], r: 80, height: 45 },
 
-    // Desert basin (SW): flat floor; dunes come with the desert region.
-    { type: 'pad', pos: [-430, 420], r: 170, y: 5, falloff: 60 },
+    // Desert basin (SW): low base ground; dunes come with the desert region.
 
     // Grand Prix flats (S).
     { type: 'pad', pos: [-120, 420], r: 170, y: 6, falloff: 30 },

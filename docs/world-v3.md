@@ -14,7 +14,7 @@
 |---|---|---|---|
 | 북 | 바다 + 만 | 0 / 절벽 15~35 | 아말피 해안 연장, 등대 곶 |
 | 북서 | 설산 | 도로 35→75 | 눈길(SNOW), 그늘 헤어핀 빙판(ICE), 산장 |
-| 서 | 산악 랠리 | 18→70(고개)→8 | 자갈 스위치백 4개, 하산 크레스트 3개 |
+| 서 | 산악 랠리 | 4→60(고개)→4 | 자갈 스위치백 4개(mountain), 하산 직선 2개(descent) |
 | 남서 | 사막 분지 | 4~12 + 사구 | 다진 모래 피스트(PISTE), 점프 2개, 비박 |
 | 남 | 그랑프리 | 평탄 y6 | 1.5 km, 500 m 메인 스트레이트, 피트, 관람석 |
 | 남동→동 | 링크 + 롱 스트레이트 | 8→28 | 1.1 km 직선, 시케인, 킹크, 24H 밤 구간 |
@@ -31,9 +31,9 @@
 | SS1~5 | (기존) | 홈 | 기존 | — | p1~p5 |
 | SS6 | GRAND PRIX | gp 1랩 | 아스팔트 | FORMULA/HYPERCAR | p6 (이동) |
 | SS7 | TORNANTI | mountain 오르막 | 자갈 | RALLY/TRAIL | — |
-| SS8 | CRESTA | mountain 하산 | 자갈+점프 | RALLY | — |
+| SS8 | DISCESA | descent | 자갈 내리막 | RALLY | — |
 | SS9 | NEVE | neve | 눈·빙판 | RALLY/TRAIL | — |
-| SS10 | DUNE | desert | 피스트+점프 | RALLY/TRAIL | — |
+| SS10 | DUNE | desert 807 m | 흙+점프 2개 | RALLY/TRAIL | — |
 | SS11 | COSTIERA | coast-e | 아스팔트 | GT/HYPERCAR | — |
 | SS12 | LONG STRAIGHT | straight | 아스팔트 | HYPERCAR | — |
 | SS13 | VIGNA | vigna | 아스팔트 | GT | — |
@@ -65,7 +65,7 @@
 1. 틀: size 1200, 해안·만, 경계 열기, 옛 서킷 → 스키드패드, 지역 분리
 2. 남: pass, GP, 피트, SS6 이전
 3. 동: link, 롱 스트레이트, 해안 동·서, 등대, 24H v2, SS11·12
-4. 서: 산악 랠리, 고개, SS7·8
-5. 설산: 눈·빙판, 바이옴, SS9
-6. 사막: 피스트·사구, SS10, gp-west
+4. ✓ 서: 산악 랠리, 고개(pre 패드로 세 도로 합류), SS7·8
+5. ✓ 설산: 눈·빙판, 바이옴, SS9
+6. ✓ 사막: 사구 능선 5개, 점프 2개, 비박, SS10
 7. 마무리: 포도밭 SS13, 힐클라임, 제동 보드/셰브론, 고속 카메라·포그, 지도
