@@ -34,22 +34,49 @@ function sortByCoverage(chars) {
  * small cells stay crisp instead of blurring thin strokes into grey.
  */
 function createGlyphAtlas(glyphs, px) {
+  // Drawn 4× larger, then box-filtered down and pushed through a contrast
+  // curve: crisper strokes at small sizes than the browser's own
+  // antialiased text, without going fully binary.
+  const S = 4;
   const rows = Math.ceil(glyphs.length / ATLAS_COLS);
+  const big = document.createElement('canvas');
+  big.width = px * S * ATLAS_COLS;
+  big.height = px * S * rows;
+  const bctx = big.getContext('2d', { willReadFrequently: true });
+  bctx.fillStyle = '#000';
+  bctx.fillRect(0, 0, big.width, big.height);
+  bctx.fillStyle = '#fff';
+  bctx.font = font(px * S);
+  bctx.textAlign = 'center';
+  bctx.textBaseline = 'middle';
+  glyphs.forEach((ch, i) => {
+    const x = ((i % ATLAS_COLS) * px + px / 2) * S;
+    const y = (Math.floor(i / ATLAS_COLS) * px + px / 2 + px * 0.04) * S;
+    bctx.fillText(ch, x, y);
+  });
+  const src = bctx.getImageData(0, 0, big.width, big.height).data;
+
   const canvas = document.createElement('canvas');
   canvas.width = px * ATLAS_COLS;
   canvas.height = px * rows;
   const ctx = canvas.getContext('2d');
-  ctx.fillStyle = '#000';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = '#fff';
-  ctx.font = font(px);
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  glyphs.forEach((ch, i) => {
-    const x = (i % ATLAS_COLS) * px + px / 2;
-    const y = Math.floor(i / ATLAS_COLS) * px + px / 2 + px * 0.04;
-    ctx.fillText(ch, x, y);
-  });
+  const out = ctx.createImageData(canvas.width, canvas.height);
+  const W = big.width;
+  for (let y = 0; y < canvas.height; y++) {
+    for (let x = 0; x < canvas.width; x++) {
+      let sum = 0;
+      for (let j = 0; j < S; j++) {
+        const row = (y * S + j) * W;
+        for (let i = 0; i < S; i++) sum += src[(row + x * S + i) * 4];
+      }
+      const v = sum / (S * S * 255);
+      const t = Math.min(1, Math.max(0, (v - 0.12) / 0.45));
+      const k = (y * canvas.width + x) * 4;
+      out.data[k] = out.data[k + 1] = out.data[k + 2] = Math.round(t * t * (3 - 2 * t) * 255);
+      out.data[k + 3] = 255;
+    }
+  }
+  ctx.putImageData(out, 0, 0);
 
   const tex = new THREE.CanvasTexture(canvas);
   tex.minFilter = THREE.NearestFilter;
@@ -139,6 +166,9 @@ const fragmentShader = /* glsl */ `
   uniform float fogNear;
   uniform float fogFar;
   uniform vec2 cells;          // cell grid size (cols, rows)
+  uniform mat4 invViewProj;    // NDC → world, for world-anchored dithering
+  uniform float hatchLevel;    // ground darker than this is hatched (0 = off)
+  uniform float airAmount;     // aerial perspective strength
 
   vec2 cellUv(vec2 cell) { return (cell + 0.5) / cells; }
 
@@ -173,20 +203,28 @@ const fragmentShader = /* glsl */ `
     // Dither nudges cells near a step boundary to the neighbouring glyph.
     float start = rampStart[set];
     float len = rampLen[set];
-    float l = clamp(lum * setDensity[set] + (hash(cell) - 0.5) * dither / len, 0.0, 0.999);
+    // Dither keyed to the WORLD position under the cell (1/3 m squares), so
+    // the pattern sticks to the ground instead of swimming as the camera moves.
+    vec4 wp = invViewProj * vec4(uv * 2.0 - 1.0, texture2D(tDepth, uv).x * 2.0 - 1.0, 1.0);
+    vec2 wxz = wp.xz / wp.w;
+    float l = clamp(lum * setDensity[set] + (hash(floor(wxz * 3.0)) - 0.5) * dither / len, 0.0, 0.999);
     float idx = start + min(floor(l * len), len - 1.0);
 
     // --- Edge detection: Sobel over neighbouring cells on depth + normals,
     // combined with a structure tensor so gradient sign doesn't matter.
     float edge = 0.0;
-    if (edgesOn > 0.5) {
+    // The car keeps a silhouette outline even with outlines off (depth only:
+    // no panel lines), so it never dissolves into the ground.
+    bool carOnly = edgesOn < 0.5 && set == ${CHARSET.CAR};
+    if (edgesOn > 0.5 || carOnly) {
+      float nW = carOnly ? 0.0 : 1.0;
       float dCenter = linearDepth(uv);
       vec4 gx = vec4(0.0), gy = vec4(0.0);
       for (int i = -1; i <= 1; i++) {
         for (int j = -1; j <= 1; j++) {
           vec2 suv = cellUv(cell + vec2(float(i), float(j)));
           vec4 inf = texture2D(tInfo, suv);
-          float w = inf.a * 255.0 >= 63.5 ? terrainNormalWeight : 1.0;
+          float w = (inf.a * 255.0 >= 63.5 ? terrainNormalWeight : 1.0) * nW;
           vec4 s = vec4(inf.rgb * w, linearDepth(suv) / dCenter * depthWeight);
           float wx = float(i) * (j == 0 ? 2.0 : 1.0);
           float wy = float(j) * (i == 0 ? 2.0 : 1.0);
@@ -222,10 +260,24 @@ const fragmentShader = /* glsl */ `
       }
     }
 
+    // Shade hatching: dark ground (cast shadows, slopes turned away) is drawn
+    // with diagonal strokes on a world-anchored grid, like pen hatching,
+    // instead of a dark empty block. Darker = denser strokes.
+    bool soft = aByte >= 64.0 && aByte < 128.0;
+    if (edge == 0.0 && soft && lum < hatchLevel) {
+      vec2 hq = floor(wxz * 2.5);
+      float spacing = lum < hatchLevel * 0.6 ? 2.0 : 3.0;
+      idx = mod(hq.x + hq.y, spacing) < 0.5 ? edgeStart + 3.0 : start; // '/' or blank
+    }
+
     // Glyph density carries brightness, so normalise colour to full hue.
     float peak = max(max(col.r, col.g), max(col.b, 1e-3));
     vec3 hue = col / peak;
     vec3 tint = mix(monoColor, mix(hue, vec3(1.0), pastel), colorMode);
+    // Aerial perspective: farther cells fade toward the air colour (less
+    // saturated, less contrast), so depth reads in a top-down view.
+    float air = smoothstep(32.0, 110.0, linearDepth(uv)) * airAmount;
+    tint = mix(tint, background * 1.6 + vec3(0.07), air);
     // The wash keeps the surface colour under contours; road edges also
     // darken the wash so the road reads as a crisp band.
     vec3 baseTint = tint;
@@ -354,6 +406,9 @@ export class AsciiRenderer {
         fogNear: { value: 1e4 },
         fogFar: { value: 1e5 },
         cells: { value: new THREE.Vector2(1, 1) },
+        invViewProj: { value: new THREE.Matrix4() },
+        hatchLevel: { value: 0.45 },
+        airAmount: { value: 0.6 },
       },
       depthTest: false,
       depthWrite: false,
@@ -491,6 +546,7 @@ export class AsciiRenderer {
   render(scene, camera) {
     const r = this.renderer;
     const u = this.material.uniforms;
+    u.invViewProj.value.multiplyMatrices(camera.matrixWorld, camera.projectionMatrixInverse);
     u.cameraNear.value = camera.near;
     u.cameraFar.value = camera.far;
     if (scene.fog) {

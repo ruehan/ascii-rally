@@ -67,12 +67,13 @@ export function buildWorld(scene, map) {
   scene.background = new THREE.Color('#121612');
   scene.fog = new THREE.Fog('#121612', 55, 130);
 
-  const ground = createTerrainMesh(terrain, surfaces, biomes);
+  // Sea: brightness ripples over time so the `~ ≈` glyphs shimmer; the
+  // terrain draws surf along the shore from the same clock.
+  const seaTime = { value: 0 };
+  const ground = createTerrainMesh(terrain, surfaces, biomes, { waterLevel: map.waterLevel, time: seaTime });
   scene.add(ground);
 
-  // Sea: brightness ripples over time so the `~ ≈` glyphs shimmer.
   const seaMat = new THREE.MeshStandardMaterial({ color: '#3f86ad', roughness: 0.6, emissive: '#000000' });
-  const seaTime = { value: 0 };
   seaMat.onBeforeCompile = shader => {
     shader.uniforms.uTime = seaTime;
     shader.vertexShader = shader.vertexShader
@@ -163,10 +164,31 @@ export function buildWorld(scene, map) {
   };
 
   // --- Buildings ---------------------------------------------------------------
+  // Windows: dark glass by day; at night a share of them light up (the
+  // material's glow follows the time of day, see update()).
+  const windowLit = new THREE.MeshStandardMaterial({ color: '#2c313a', emissive: '#ffc35a', emissiveIntensity: 0, flatShading: true });
+  const windowDark = material('#2c313a');
+  function windows(x, z, yaw, w, d, floorY, floors, rand) {
+    const c = Math.cos(yaw), s = Math.sin(yaw);
+    const n = Math.max(1, Math.floor((w - 1) / 2.2));
+    for (const side of [-1, 1]) {
+      for (let f = 0; f < floors; f++) {
+        for (let i = 0; i < n; i++) {
+          const lx = (i - (n - 1) / 2) * (w - 1) / n, lz = side * (d / 2 + 0.05);
+          const px = x + lx * c + lz * s, pz = z - lx * s + lz * c;
+          const lit = rand() < 0.55;
+          _m.compose(_p.set(px, floorY + 1.1 + f * 3, pz), _q.setFromEuler(_e.set(0, yaw, 0)), _s.set(0.9, 1.2, 0.12));
+          inst.add(G.block(), lit ? windowLit : windowDark, CHARSET.GOLD, _m, { castShadow: false });
+        }
+      }
+    }
+  }
+
   function house(x, z, yaw, w, d, floors, rand, { flatRoof = false } = {}) {
     const { lo, hi } = footprint(x, z, w / 2, d / 2, yaw);
     const base = lo - 0.4;
     const wallH = hi - base + floors * 3;
+    windows(x, z, yaw, w, d, hi, floors, rand);
     put(G.block(), pick(rand, HOUSE_WALLS), CHARSET.WALL, x, base, z, w, wallH, d, { yaw, cut: true });
     if (flatRoof) {
       put(G.block(), '#f4efe4', CHARSET.WALL, x, base + wallH, z, w + 0.4, 0.4, d + 0.4, { yaw, cut: true });
@@ -710,7 +732,10 @@ export function buildWorld(scene, map) {
     /** Per-frame: sea ripples; at dusk/night the sea faintly reflects the sky. */
     update(dt, t, look) {
       seaTime.value = t;
-      if (look) seaMat.emissive.copy(look.sky).multiplyScalar(look.night ? 0.24 : 0.12);
+      if (look) {
+        seaMat.emissive.copy(look.sky).multiplyScalar(look.night ? 0.24 : 0.12);
+        windowLit.emissiveIntensity = look.lights * 1.8; // dusk → night
+      }
     },
   };
 }

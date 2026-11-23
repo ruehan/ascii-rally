@@ -89,7 +89,7 @@ const STYLE = {
   SNOW: { density: 0.5, fill: 0.55 }, SNOW_HIGH: { density: 0.5, fill: 0.55 },
   ASPHALT: ROAD, GRAVEL: ROAD, DIRT: ROAD, COBBLE: ROAD, FLOOR: ROAD, ICE: ROAD, PACKED: ROAD, KERB: { density: 1, fill: 0.3 },
   CLIFF: { density: 0.85, fill: 0.2 },
-  CAR: { density: 1.1, fill: 0.32 },
+  CAR: { density: 1.1, fill: 0.5 },
   TILDE: { density: 0.9, fill: 0.22 },
 };
 export const SET_DENSITY = [], SET_FILL = [];

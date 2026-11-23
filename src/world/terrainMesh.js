@@ -44,7 +44,7 @@ const CHUNK = 50; // cells per chunk side (100 m at 2 m cells)
  * physics matches the picture. Chunk borders duplicate vertices; normals and
  * colours come from the global grid, so there are no seams.
  */
-export function createTerrainMesh(terrain, surfaces, biomes = null) {
+export function createTerrainMesh(terrain, surfaces, biomes = null, { waterLevel = 0, time = { value: 0 } } = {}) {
   const { n, origin, cell, heights } = terrain;
   const count = n * n;
   const pos = new Float32Array(count * 3);
@@ -128,12 +128,19 @@ export function createTerrainMesh(terrain, surfaces, biomes = null) {
     shader.uniforms.uWorldMin = { value: surfaces.origin };
     shader.uniforms.uWorldSize = { value: surfaces.size };
     shader.uniforms.uSurfColor = { value: surfaceColors };
+    shader.uniforms.uTime = time;
+    shader.uniforms.uWater = { value: waterLevel };
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying vec2 vWorldXZ;')
-      .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvWorldXZ = (modelMatrix * vec4(transformed, 1.0)).xz;');
+      .replace('#include <common>', '#include <common>\nvarying vec2 vWorldXZ;\nvarying vec3 vWorldN;\nvarying float vWorldY;')
+      .replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\nvWorldN = normalize(mat3(modelMatrix) * objectNormal);')
+      .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvec4 wpos = modelMatrix * vec4(transformed, 1.0);\nvWorldXZ = wpos.xz;\nvWorldY = wpos.y;');
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>
         varying vec2 vWorldXZ;
+        varying vec3 vWorldN;
+        varying float vWorldY;
+        uniform float uTime;
+        uniform float uWater;
         uniform sampler2D tSurfId;
         uniform float uWorldMin;
         uniform float uWorldSize;
@@ -142,7 +149,24 @@ export function createTerrainMesh(terrain, surfaces, biomes = null) {
         float sid = floor(texture2D(tSurfId, (vWorldXZ - uWorldMin) / uWorldSize).r * 255.0 + 0.5);
         if (sid > 0.5) diffuseColor.rgb = uSurfColor[int(clamp(sid, 0.0, 15.0))];
         // Kerbs: red/white blocks along the road.
-        if (abs(sid - ${SURFACE_IDS.kerb}.0) < 0.5 && fract((vWorldXZ.x + vWorldXZ.y) * 0.5) < 0.5) diffuseColor.rgb = vec3(0.95);`);
+        if (abs(sid - ${SURFACE_IDS.kerb}.0) < 0.5 && fract((vWorldXZ.x + vWorldXZ.y) * 0.5) < 0.5) diffuseColor.rgb = vec3(0.95);
+        // Hillshade: relief lit from the north-west whatever the sun does, so
+        // slopes read from the top-down camera (flat ground stays at 1).
+        {
+          const vec3 HL = vec3(-0.5, 0.7071, -0.5);
+          float hs = clamp(1.0 + 1.3 * (dot(normalize(vWorldN), HL) - HL.y), 0.58, 1.4);
+          diffuseColor.rgb *= hs;
+        }
+        // Surf: a white band just above the waterline that washes up and
+        // back (two waves of different period along the shore).
+        {
+          // (reach stays positive: smoothstep with swapped edges is undefined)
+          float reach = 0.32 + 0.16 * sin(uTime * 1.3 + vWorldXZ.x * 0.11 + vWorldXZ.y * 0.05)
+                             + 0.09 * sin(uTime * 0.7 - vWorldXZ.x * 0.23);
+          float above = vWorldY - uWater;
+          float foam = above > -0.2 && above < 1.0 ? (1.0 - smoothstep(reach * 0.5, reach, above)) : 0.0;
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.93, 0.96, 0.97), foam * 0.85);
+        }`);
   };
 
   const infoMaterial = createTerrainInfoMaterial({ surfaceIdTex: idTex, surfaceSdfTex: sdfTex, size: surfaces.size });
