@@ -69,6 +69,15 @@
 .ui-panel .big { font-size: 22px; color: var(--ui-text); }
 .ui-panel .foot { margin-top: 14px; color: var(--ui-dim); }
 
+/* Milestone card */
+.ui-card {
+  top: 54px; left: 14px; width: min(340px, calc(100vw - 28px)); white-space: normal;
+  background: var(--ui-bg); border: 1px solid var(--ui-warn); padding: 10px 14px;
+}
+.ui-card[hidden] { display: none; }
+.ui-card h2 { font: inherit; color: var(--ui-warn); margin: 0 0 6px; }
+.ui-card p { margin: 0; }
+
 /* Controls help */
 .ui-help { right: 14px; bottom: 52px; color: var(--ui-dim); font-size: 11px; text-align: right; background: var(--ui-bg); border: 1px solid var(--ui-line); padding: 4px 8px; }
 .ui-speed { right: 14px; bottom: 14px; color: var(--ui-accent); font: bold 18px ui-monospace, Menlo, monospace; background: var(--ui-bg); border: 1px solid var(--ui-line); padding: 2px 8px; }

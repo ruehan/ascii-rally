@@ -120,4 +120,38 @@ for (const id of ['forest', 'town', 'valley']) {
   }
 }
 
+// The 24H loop can be driven start to finish on the real map.
+{
+  const { createLoop24 } = await import(root + '/src/game/loop24.js');
+  const { createBus } = await import(root + '/src/core/events.js');
+  const bus = createBus();
+  const events = [];
+  for (const t of ['loop:start', 'loop:milestone', 'loop:finish', 'loop:pause']) bus.on(t, () => events.push(t));
+  const route = w.route;
+  const loop = createLoop24({ route, start: map.loop24.start, milestones: [1, 2, 3, 4, 5, 6].map(i => ({ year: i })), bus });
+  const p = new ArcadePhysics({ bounds: w.bounds, terrain: { heightAt: T.heightAt, slopeAlong: T.slopeAlong, surfaceAt: S.surfaceAt } });
+  w.colliders.forEach(c => p.addStatic(c));
+  const a = pointAt(route.path, route.cum, 2);
+  const v = p.createVehicle({ pos: [a.x, a.z], heading: Math.atan2(-a.tx, -a.tz) });
+  let s = 2, t = 0;
+  for (; t < 240 && !events.includes('loop:finish') && !events.includes('loop:pause'); t += 1 / 60) {
+    let best = Infinity;
+    for (let q = s - 5; q < s + 20; q += 0.5) {
+      const pt = pointAt(route.path, route.cum, q);
+      const d = Math.hypot(pt.x - v.x, pt.z - v.z);
+      if (d < best) { best = d; s = q; }
+    }
+    const tgt = pointAt(route.path, route.cum, s + 7);
+    let err = Math.atan2(-(tgt.x - v.x), -(tgt.z - v.z)) - v.heading;
+    while (err > Math.PI) err -= 2 * Math.PI;
+    while (err < -Math.PI) err += 2 * Math.PI;
+    p.setIntents(v, { throttle: Math.abs(err) > 0.6 ? 0.3 : 1, brake: 0, steer: Math.max(-1, Math.min(1, err * 2)) });
+    p.step(1 / 60);
+    loop.update(1 / 60, v);
+  }
+  assert.deepEqual(events.filter(e => e !== 'loop:milestone'), ['loop:start', 'loop:finish'], `24H events: ${events}`);
+  assert.equal(events.filter(e => e === 'loop:milestone').length, 6);
+  console.log(`  24H lap ${route.length.toFixed(0)} m in ${t.toFixed(0)} s`);
+}
+
 console.log('all world tests passed');

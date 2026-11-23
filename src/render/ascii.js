@@ -376,6 +376,16 @@ export class AsciiRenderer {
     this.setSize(size.x, size.y);
   }
 
+  /** Time-of-day look: exposure, floor, pastel, edge gain, background colour. */
+  setLook(look) {
+    const u = this.material.uniforms;
+    u.exposure.value = look.exposure;
+    u.lumFloor.value = look.floor;
+    u.pastel.value = look.pastel;
+    u.edgeGain.value = look.edgeGain;
+    u.background.value.copy(look.fog).multiplyScalar(0.8);
+  }
+
   toggleColor() {
     const u = this.material.uniforms.colorMode;
     u.value = u.value ? 0 : 1;

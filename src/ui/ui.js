@@ -52,9 +52,11 @@ export function createUI({ bus, stages, onPanel }) {
   const count = el('ui-count');
   const speed = el('ui-speed');
   const help = el('ui-help');
+  const card = el('ui-card');
+  let cardTimer = 0;
   const panel = el('ui-panel');
   panel.hidden = true;
-  help.textContent = 'WASD/방향키 운전 · E 열기 · Esc 닫기 · R 출발점\nV 카메라 · M 소리 · C 컬러 · G 윤곽선 · +/- 글자 크기';
+  help.textContent = 'WASD/방향키 운전 · E 열기 · Esc 닫기 · R 출발점\nV 카메라 · T 시간대 · M 소리 · C 컬러 · G 윤곽선 · +/- 글자 크기';
 
   let noteLines = [];
   let lastSplit = null;
@@ -116,7 +118,22 @@ export function createUI({ bus, stages, onPanel }) {
       ${timesLog(stage, rec.entry.hash)}`);
   }
 
+  /** Transient card (doesn't block driving). */
+  function showCard(title, lines, seconds = 5) {
+    card.innerHTML = `<h2>${esc(title)}</h2>${renderLines(lines)}`;
+    card.hidden = false;
+    cardTimer = seconds;
+  }
+  card.hidden = true;
+
   // --- Bus ---------------------------------------------------------------------------
+  bus.on('loop:start', () => { close(); note('> 24H · green flag · 15:00'); });
+  bus.on('loop:milestone', ({ milestone: m }) => {
+    note(`> ${m.year} · ${m.title}`);
+    showCard(`${m.year} · ${m.title}`, [m.text]);
+  });
+  bus.on('loop:finish', () => { note('> 24H · chequered flag'); showCard('24H · finished', ['Round the clock — and back to now.']); });
+  bus.on('loop:pause', () => note('> 24H · session paused (off route)'));
   bus.on('zone:open', ({ zone }) => openZone(zone));
   bus.on('stage:armed', ({ stage }) => { close(); noteLines = []; note(`> ${stage.name} armed · ${projects[stage.project]?.title ?? ''}`); });
   bus.on('stage:count', ({ n }) => { count.textContent = n; count.classList.remove('go'); });
@@ -137,7 +154,7 @@ export function createUI({ bus, stages, onPanel }) {
   /**
    * state: { vehicle, place, zone, nav: { name, dist, bearing } | null, viewYaw, dt }
    */
-  function update({ vehicle, place, zone, nav, viewYaw, dt }) {
+  function update({ vehicle, place, zone, nav, viewYaw, loop, dt }) {
     const kmh = String(Math.round(Math.abs(vehicle.speed) * 3.6)).padStart(3, '0');
     const alt = `alt ${String(Math.round(vehicle.y)).padStart(2)}m`;
     const sep = '<span class="sep">│</span>';
@@ -146,6 +163,10 @@ export function createUI({ bus, stages, onPanel }) {
       const st = stages.active;
       const delta = lastSplit === null ? '' : `${sep}<span class="${lastSplit <= 0 ? 'good' : 'bad'}">${lastSplit <= 0 ? '▼' : '▲'} ${lastSplit.toFixed(1)}</span>`;
       top.innerHTML = `<span class="prompt">${esc(st.name)}</span>${sep}<span class="opt">/projects/${esc(projects[st.project]?.title ?? '')}</span>${sep}${formatTime(stages.time)}${delta}${sep}${kmh} km/h${sep}<span class="opt">${alt}</span><span class="right">${Math.round(stages.progress * 100)}%</span>`;
+    } else if (loop && loop.state === 'running') {
+      const hh = Math.floor(loop.hour), mm = Math.floor((loop.hour - hh) * 60);
+      const clock = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+      top.innerHTML = `<span class="prompt">24H</span>${sep}${clock}${sep}${kmh} km/h${sep}<span class="opt">${alt}</span><span class="right">${Math.round(loop.progress * 100)}%</span>`;
     } else {
       top.innerHTML = `<span class="prompt">${esc(owner.handle)}@stage:${esc(place)} $</span><span class="right opt">${kmh} km/h · ${alt} · ${esc(vehicle.surface ?? '')}</span>`;
     }
@@ -169,6 +190,7 @@ export function createUI({ bus, stages, onPanel }) {
     else prompt.innerHTML = '';
 
     if (countTimer > 0) { countTimer -= dt; if (countTimer <= 0) count.textContent = ''; }
+    if (cardTimer > 0) { cardTimer -= dt; if (cardTimer <= 0) card.hidden = true; }
   }
 
   return { update, note, close, openZone, visited, get panelOpen() { return !panel.hidden; } };

@@ -16,6 +16,9 @@ import { createStageSystem } from './game/stages.js';
 import { createUI } from './ui/ui.js';
 import { createParticles } from './fx/particles.js';
 import { createAudio } from './fx/audio.js';
+import { createLoop24 } from './game/loop24.js';
+import { sampleTime } from './render/timeOfDay.js';
+import { milestones } from './content/content.js';
 
 // --- Renderer -------------------------------------------------------------
 const renderer = new THREE.WebGLRenderer({ antialias: false });
@@ -61,6 +64,14 @@ const unlockAudio = () => audio.unlock();
 window.addEventListener('keydown', unlockAudio, { once: true });
 window.addEventListener('pointerdown', unlockAudio, { once: true });
 
+const loop24 = createLoop24({ route: world.route, start: map.loop24.start, startHour: map.loop24.startHour, milestones, bus });
+
+// Time of day: the 24H session drives the clock; otherwise a preset (T cycles).
+const PRESETS = [15, 18.8, 23.5, 5.8];
+let preset = 0;
+let hour = PRESETS[0];
+let look = sampleTime(hour);
+
 bus.on('stage:count', () => audio.beep());
 bus.on('stage:go', () => audio.beep(true));
 
@@ -72,6 +83,7 @@ function respawn(at = safe) {
     audio.splash();
   }
   stages.abort();
+  loop24.reset();
   physics.resetVehicle(vehicle, at.pos, at.heading);
   car.sync(vehicle, 1, 0);
   rig.snap(car.object, vehicle);
@@ -87,6 +99,11 @@ input.onPress('KeyE', () => { if (!ui.close()) zones.open(); });
 input.onPress('Escape', () => ui.close());
 input.onPress('KeyV', () => ui.note(`> camera: ${rig.toggleMode()}`));
 input.onPress('KeyM', () => ui.note(`> sound: ${audio.toggleMute() ? 'off' : 'on'}`));
+input.onPress('KeyT', () => {
+  if (loop24.state === 'running') return ui.note('> 24H running — the clock is the race');
+  preset = (preset + 1) % PRESETS.length;
+  ui.note(`> time: ${['afternoon', 'sunset', 'night', 'dawn'][preset]}`);
+});
 
 // --- Where am I / where next -------------------------------------------------
 function place() {
@@ -103,7 +120,9 @@ function place() {
 const targets = [
   ...stages.stages.map(st => ({ id: st.id, name: `${st.name} start`, x: st.start.x, z: st.start.z })),
   ...map.zones.filter(z => z.id !== 'paddock').map(z => ({ id: z.id, name: z.title.toLowerCase(), x: z.pos[0], z: z.pos[1] })),
+  { id: '24h', name: '24H gate', x: loop24.startPoint.x, z: loop24.startPoint.z },
 ];
+bus.on('loop:finish', () => ui.visited.add('24h'));
 function nextTarget() {
   let best = null;
   for (const t of targets) {
@@ -149,6 +168,7 @@ const loop = createLoop({
     physics.step(h);
     zones.update(h, vehicle);
     stages.update(h, vehicle);
+    loop24.update(h, vehicle);
 
     // Impacts: camera kick, body squash, dust, thump.
     if (vehicle.landed > 3) {
@@ -175,6 +195,17 @@ const loop = createLoop({
   render(alpha, dt) {
     car.sync(vehicle, alpha, dt);
     rig.update(dt, car.object, vehicle);
+    // Time of day: ease toward the target hour along the shorter way round the clock.
+    const want = loop24.hour ?? PRESETS[preset];
+    const diff = ((want - hour + 36) % 24) - 12;
+    hour = (hour + diff * Math.min(1, dt * (loop24.state === 'running' ? 6 : 1.2)) + 24) % 24;
+    look = sampleTime(hour);
+    lighting.setTime(look);
+    ascii.setLook(look);
+    scene.fog.color.copy(look.fog);
+    scene.background.copy(look.fog);
+    car.setLights(look.lights);
+
     particles.drive(dt, car.rearWheels(wheels), vehicle);
     particles.update(dt);
     audio.update(dt, vehicle, (devIntents ?? readIntents(input.state)).throttle);
@@ -188,17 +219,18 @@ const loop = createLoop({
 
     const nav = nextTarget();
     navNote(nav, dt);
-    ui.update({ vehicle, place: place(), zone: zones.current, nav, viewYaw: rig.yaw, dt });
+    ui.update({ vehicle, place: place(), zone: zones.current, nav, viewYaw: rig.yaw, loop: loop24, dt });
   },
 });
 
-loop.onUpdate((dt, t) => world.update(dt, t));
+loop.onUpdate((dt, t) => world.update(dt, t, look));
 loop.start();
 
 // Dev-only handle for debugging / screenshots from the console.
 if (import.meta.env.DEV) {
   window.__stage = {
-    physics, vehicle, terrain, surfaces, stages, zones, renderer,
+    physics, vehicle, terrain, surfaces, stages, zones, renderer, loop24,
+    setPreset(i) { preset = i; },
     teleport(x, z, heading = 0) { respawn({ pos: [x, z], heading }); },
     /** Force intents ({throttle, brake, steer}) or null to hand control back. */
     drive(intents) { devIntents = intents; },

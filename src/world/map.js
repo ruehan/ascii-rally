@@ -82,6 +82,12 @@ export default {
         [-25, -128], [5, -138], [40, -148], [70, -132], [100, -138], [135, -126], [170, -134], [186, -124]],
     },
     {
+      // East side, coast → paddock: the night leg of the 24H loop.
+      id: 'east', surface: 'dirt', width: 7, shoulder: 5, smooth: 40,
+      points: [[184, -118], [178, -80], [170, -40], [168, 0], [166, 40], [155, 80], [130, 112],
+        [90, 135], [55, 140], [22, 124]],
+    },
+    {
       id: 'lookout', surface: 'gravel', width: 5, shoulder: 3, smooth: 6,
       points: [[-119, -155], [-121, -158], [-122, -160]],
     },
@@ -91,7 +97,7 @@ export default {
   zones: [
     { id: 'paddock', title: 'PADDOCK', path: '~/paddock', content: 'season', pos: [0, 120], r: 22, surface: 'pad' },
     { id: 'garage', title: 'GARAGE', path: '~/garage', content: 'skills', pos: [-40, 146], r: 9, surface: 'pad' },
-    { id: 'pitwall', title: 'PIT WALL', path: '~/pit-wall', content: 'contact', pos: [36, 136], r: 8, surface: 'pad' },
+    { id: 'pitwall', title: 'PIT WALL', path: '~/pit-wall', content: 'contact', pos: [26, 158], r: 8, surface: 'pad' },
     { id: 'piazza', title: 'RALLY HQ', path: '~/old-town/hq', content: 'hq', pos: [95, 10], r: 14, y: 16, surface: 'cobble' },
     { id: 'lookout', title: 'LOOKOUT', path: '~/coast/lookout', content: 'about', pos: [-122, -163], r: 7, surface: 'pad' },
   ],
@@ -104,6 +110,19 @@ export default {
     { id: 'ss2', name: 'SS2', trail: 'town', from: 40, to: 305, splits: [120, 220], project: 'p2', hue: '#ff6b6b', target: 28 },
     { id: 'ss3', name: 'SS3', trail: 'coast', from: 222, to: 395, splits: [280, 340], project: 'p3', hue: '#4dabf7', target: 15 },
   ],
+
+  // 24H loop: a route stitched from existing roads (clockwise). Driving it
+  // runs the clock from 15:00 round to 15:00; career milestones sit along it.
+  loop24: {
+    route: [
+      { trail: 'valley' },
+      { trail: 'coast', from: 211 },
+      { trail: 'east' },
+      { points: [[22, 124], [10, 108], [0, 99]] }, // across the paddock back to the start
+    ],
+    start: 10,          // start line, metres along the route
+    startHour: 15,
+  },
 
   // Scatter regions (rects: [minX, minZ, maxX, maxZ]).
   scatter: [

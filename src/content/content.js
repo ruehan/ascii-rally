@@ -47,6 +47,19 @@ export const projects = {
   },
 };
 
+/**
+ * Career milestones along the 24H loop, in order (first = afternoon start,
+ * last = back to the paddock next day). `at` (0..1 of the lap) is optional.
+ */
+export const milestones = [
+  { year: 'TODO', title: 'First line of code', text: 'TODO: where it started.' },
+  { year: 'TODO', title: 'Studies', text: 'TODO: school / degree / self-taught.' },
+  { year: 'TODO', title: 'First job', text: 'TODO: company, role.' },
+  { year: 'TODO', title: 'The long night', text: 'TODO: the hard project that taught the most.' },
+  { year: 'TODO', title: 'Levelling up', text: 'TODO: next role / big launch.' },
+  { year: 'TODO', title: 'Now', text: 'TODO: what you are doing today.' },
+];
+
 /** Zone panels (ids used in map.js zones[].content). */
 export const panels = {
   season: {
@@ -57,6 +70,9 @@ export const panels = {
       { h: 'SPECIAL STAGES = PROJECTS' },
       'Stop in a start box, wait for 3-2-1, drive to the finish.',
       'SS1 forest (gravel) · SS2 old town (cobbles) · SS3 coast (tarmac)',
+      { h: '24H = CAREER' },
+      'Drive north through the 24H gate: valley → coast → east road → home.',
+      'The clock runs from afternoon through the night; milestones line the way.',
       { h: 'ALSO ON THE MAP' },
       { k: 'LOOKOUT', v: 'about  — coast headland, north-west' },
       { k: 'GARAGE', v: 'skills — next to the paddock' },

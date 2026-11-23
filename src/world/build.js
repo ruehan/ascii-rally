@@ -9,6 +9,8 @@ import { createTerrainMesh } from './terrainMesh.js';
 import { pointAt } from './path.js';
 import { circle, box, circleContact } from '../physics/shapes.js';
 import { SpatialHash } from '../physics/spatialHash.js';
+import { buildRoute } from '../game/loop24.js';
+import { milestones } from '../content/content.js';
 
 // Deterministic RNG.
 function rng(seed) {
@@ -59,7 +61,7 @@ export function buildWorld(scene, map) {
   scene.add(ground);
 
   // Sea: brightness ripples over time so the `~ ≈` glyphs shimmer.
-  const seaMat = new THREE.MeshStandardMaterial({ color: '#3f86ad', roughness: 0.6 });
+  const seaMat = new THREE.MeshStandardMaterial({ color: '#3f86ad', roughness: 0.6, emissive: '#000000' });
   const seaTime = { value: 0 };
   seaMat.onBeforeCompile = shader => {
     shader.uniforms.uTime = seaTime;
@@ -386,6 +388,58 @@ export function buildWorld(scene, map) {
     });
   }
 
+  // --- 24H loop: start gate, milestone boards, reflectors ----------------------------
+  let route = null;
+  if (map.loop24) {
+    route = buildRoute(map.loop24.route, terrain.trails);
+    // Glow material: readable at night when everything else goes dark.
+    const glow = new THREE.MeshStandardMaterial({ color: '#ffd166', emissive: '#ffb020', emissiveIntensity: 0.8 });
+    const putGlow = (x, y, z, sx, sy, sz, yaw) => {
+      _m.compose(_p.set(x, y, z), _q.setFromEuler(_e.set(0, yaw, 0)), _s.set(sx, sy, sz));
+      inst.add(G.block(), glow, CHARSET.GOLD, _m, { castShadow: false });
+    };
+    const at = d => pointAt(route.path, route.cum, d);
+    const side = (p, off) => [p.x + p.tz * off, p.z - p.tx * off];
+    const W = 4.5; // half road + margin
+
+    // Start gate "24H".
+    {
+      const p = at(map.loop24.start);
+      const yaw = yawAlong(p.tx, p.tz);
+      for (const sgn of [-1, 1]) {
+        const [x, z] = side(p, (W + 0.5) * sgn);
+        put(G.block(), '#1d2733', CHARSET.GLYPH, x, h(x, z) - 0.2, z, 0.6, 6, 0.6, { yaw, cut: true });
+        solid(circle(x, z, 0.5, 6, h(x, z)));
+      }
+      putGlow(p.x, h(p.x, p.z) + 5.2, p.z, 1, 1.2, W * 2 + 1.6, yaw);
+    }
+    // Milestone boards (right-hand side), spaced like createLoop24 spaces them.
+    const span = route.length - map.loop24.start;
+    milestones.forEach((m, i) => {
+      const d = map.loop24.start + span * (m.at ?? (i + 1) / (milestones.length + 1));
+      const p = at(d);
+      const yaw = yawAlong(p.tx, p.tz);
+      const [x, z] = side(p, -(W + 2));
+      const y = h(x, z);
+      put(G.block(), '#2b2b2b', CHARSET.WOOD, x, y, z, 0.25, 2.2, 0.25, { yaw });
+      putGlow(x, y + 2.2, z, 2.6, 1.4, 0.2, yaw + Math.PI / 2);
+      solid(circle(x, z, 0.4, 3.5, y));
+    });
+    // Reflector posts every 12 m on the east (night) leg.
+    const east = trail('east');
+    if (east) {
+      for (let d = 6; d < east.length - 6; d += 12) {
+        const p = pointAt(east.path, east.cum, d);
+        for (const sgn of [-1, 1]) {
+          const [x, z] = side(p, (east.width / 2 + 0.8) * sgn);
+          if (surfaces.insideAt(x, z) > -0.3) continue;
+          put(G.block(), '#efefef', CHARSET.WALL, x, h(x, z), z, 0.15, 0.9, 0.15);
+          putGlow(x, h(x, z) + 0.75, z, 0.18, 0.15, 0.18, 0);
+        }
+      }
+    }
+  }
+
   // --- Scatter (trees, rocks) -----------------------------------------------------
   const KINDS = {
     conifer(x, z, rand) {
@@ -434,7 +488,11 @@ export function buildWorld(scene, map) {
   inst.build(scene);
 
   return {
-    terrain, surfaces, colliders, bounds: map.bounds, spawn: map.spawn, waterLevel: map.waterLevel,
-    update(dt, t) { seaTime.value = t; },
+    terrain, surfaces, colliders, route, bounds: map.bounds, spawn: map.spawn, waterLevel: map.waterLevel,
+    /** Per-frame: sea ripples; at dusk/night the sea faintly reflects the sky. */
+    update(dt, t, look) {
+      seaTime.value = t;
+      if (look) seaMat.emissive.copy(look.sky).multiplyScalar(look.night ? 0.24 : 0.12);
+    },
   };
 }

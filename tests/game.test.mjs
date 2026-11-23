@@ -96,6 +96,33 @@ function run({ jump = false, wander = false } = {}) {
   assert.deepEqual(types(log), ['zone:enter', 'zone:open', 'zone:exit']);
 }
 
+// --- 24H loop -------------------------------------------------------------------------
+{
+  const { buildRoute, createLoop24 } = await import(root + '/src/game/loop24.js');
+  const tA = trail('a', [[0, 0], [0, -100]]);
+  const route = buildRoute([{ trail: 'a' }, { points: [[0, -100], [50, -100]] }], [tA]);
+  assert.ok(Math.abs(route.length - 150) < 2, `route length ${route.length}`);
+
+  const bus = createBus();
+  const log = [];
+  for (const t of ['loop:start', 'loop:milestone', 'loop:finish', 'loop:pause']) bus.on(t, p => log.push([t, p]));
+  const lp = createLoop24({ route, start: 10, startHour: 15, milestones: [{ year: 'a' }, { year: 'b' }], bus });
+  const v = { x: 0, z: -5, heading: 0, speed: 0 };
+  lp.update(1 / 60, v);
+  assert.equal(lp.state, 'idle', 'standing still does not start');
+  v.speed = 10;
+  const pts = route.path;
+  let halfHour = null;
+  for (let i = 0; i < pts.length; i++) {
+    v.x = pts[i][0]; v.z = pts[i][1];
+    if (i > 0) v.heading = Math.atan2(-(pts[i][0] - pts[i - 1][0]), -(pts[i][1] - pts[i - 1][1]));
+    lp.update(1 / 60, v);
+    if (lp.state === 'running' && halfHour === null && lp.progress > 0.49) halfHour = lp.hour;
+  }
+  assert.deepEqual(log.map(e => e[0]), ['loop:start', 'loop:milestone', 'loop:milestone', 'loop:finish']);
+  assert.ok(Math.abs(halfHour - 3) < 0.6, `halfway is ~03:00, got ${halfHour}`);
+}
+
 assert.equal(formatTime(83.42), '1:23.4');
 assert.equal(formatTime(9.96), '0:10.0');
 assert.equal(formatTime(59.96), '1:00.0');

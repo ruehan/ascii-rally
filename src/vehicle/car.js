@@ -22,9 +22,21 @@ export class CarView {
     body.position.y = 0.7;
     const cabin = box(1.5, 0.6, 1.6, '#f1f3f5');
     cabin.position.set(0, 1.3, 0.3);
-    const light = box(1.4, 0.2, 0.1, '#fff3b0');
+    // Lamps get their own emissive material so they can glow at night.
+    this.lampMat = new THREE.MeshStandardMaterial({ color: '#fff3b0', emissive: '#fff0c0', emissiveIntensity: 0 });
+    const light = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.2, 0.1), this.lampMat);
     light.position.set(0, 0.8, -1.65);
-    this.object.add(body, cabin, light);
+    this.tailMat = new THREE.MeshStandardMaterial({ color: '#7a1010', emissive: '#ff2020', emissiveIntensity: 0 });
+    const tail = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.18, 0.08), this.tailMat);
+    tail.position.set(0, 0.85, 1.62);
+    this.object.add(body, cabin, light, tail);
+
+    // Headlights: present from the start (adding lights later recompiles
+    // every shader); only the intensity changes.
+    this.headlight = new THREE.SpotLight('#fff2d0', 0, 42, 0.5, 0.55, 1);
+    this.headlight.position.set(0, 1, -1.6);
+    this.headlight.target.position.set(0, -1.5, -16);
+    this.object.add(this.headlight, this.headlight.target);
 
     this.wheels = [];
     const wheelGeo = new THREE.CylinderGeometry(WHEEL_RADIUS, WHEEL_RADIUS, 0.35, 10);
@@ -48,6 +60,13 @@ export class CarView {
     this.body = [body, cabin, light];
     this.squash = 0;
     this.squashV = 0;
+  }
+
+  /** 0 = off, 1 = full night lights. */
+  setLights(k) {
+    this.headlight.intensity = 60 * k;
+    this.lampMat.emissiveIntensity = 1.5 * k;
+    this.tailMat.emissiveIntensity = 1.2 * k;
   }
 
   /** Squash the body (landings). */
