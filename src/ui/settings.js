@@ -8,11 +8,12 @@
  *   edges    outline glyphs
  *   camera   'chase' | 'top'
  *   quality  'auto' | 'high' | 'medium' | 'low'
+ *   style    'glyphs' (density charsets) | 'code' (a page of source text)
  *
  * Language lives in i18n.js (it's needed before anything else renders).
  */
 const KEY = 'stage~/settings';
-const DEFAULTS = { sound: true, glyph: 6, colour: true, edges: false, camera: 'chase', quality: 'auto' };
+const DEFAULTS = { sound: true, glyph: 6, colour: true, edges: false, camera: 'chase', quality: 'auto', style: 'glyphs' };
 
 const load = () => {
   try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(KEY) ?? '{}') }; } catch { return { ...DEFAULTS }; }

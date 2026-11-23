@@ -28,6 +28,7 @@ import { settings } from './ui/settings.js';
 import { createSettingsMenu } from './ui/settingsMenu.js';
 import { createBoot } from './ui/boot.js';
 import { TIERS, guessTier, createAutoQuality } from './render/quality.js';
+import { loadCodeLines } from './render/codeText.js';
 
 // Boot screen is already up (index.html); let it paint before the heavy build.
 const boot = createBoot();
@@ -250,8 +251,15 @@ const quality = createAutoQuality({
 });
 rig.setMode(settings.get('camera'));
 audio.setMuted(!settings.get('sound'));
+// Render style: the code page needs the source text (loaded on first use).
+const applyStyle = style => {
+  if (style === 'code') loadCodeLines().then(lines => { if (settings.get('style') === 'code') ascii.setStyle('code', lines); });
+  else ascii.setStyle('glyphs');
+};
+applyStyle(settings.get('style'));
 settings.onChange((key, v) => {
-  if (key === 'glyph') ascii.setCellSize(v);
+  if (key === 'style') applyStyle(v);
+  else if (key === 'glyph') ascii.setCellSize(v);
   else if (key === 'colour') ascii.setColor(v);
   else if (key === 'edges') ascii.setEdges(v);
   else if (key === 'camera') rig.setMode(v);

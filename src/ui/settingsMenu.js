@@ -14,6 +14,7 @@ export function createSettingsMenu({ onOpenChange, toggleHelp, getQuality }) {
   const ROWS = [
     { id: 'lang', options: ['en', 'ko'], get: () => i18n.lang, set: v => i18n.set(v), fmt: v => (v === 'en' ? 'English' : '한국어') },
     { id: 'sound', options: [true, false], fmt: v => t(v ? 'set.on' : 'set.off') },
+    { id: 'style', options: ['glyphs', 'code'], fmt: v => t(`set.style.${v}`) },
     { id: 'glyph', options: [6, 8, 10, 12, 16], fmt: v => `${v}px` },
     { id: 'colour', options: [true, false], fmt: v => t(v ? 'set.on' : 'set.off') },
     { id: 'edges', options: [true, false], fmt: v => t(v ? 'set.on' : 'set.off') },
