@@ -105,3 +105,46 @@ console.log('all physics tests passed');
   }
   console.log('tyre table complete');
 }
+
+// Realism: braking distances, engine braking, weight transfer, terrain effects.
+{
+  const flatT = (surface, slope = 0, side = 0) => ({
+    heightAt: () => 0,
+    // slopeAlong(x,z,dx,dz): rise per metre along (dx,dz); +x is "right" when facing -Z.
+    slopeAlong: (x, z, dx, dz) => -dz * slope + dx * side,
+    surfaceAt: () => surface,
+  });
+  const run = (id, terrain, kmh, intents, secs) => {
+    const p = new ArcadePhysics({ terrain });
+    const v = p.createVehicle({ car: id });
+    p.setSpeed(v, kmh / 3.6);
+    p.setIntents(v, intents);
+    const z0 = v.z;
+    let t = 0;
+    while (t < secs && !(intents.brake && v.speed < 0.3)) { p.step(1 / 120); t += 1 / 120; }
+    return { v, dist: z0 - v.z, t };
+  };
+  // 100→0 km/h on asphalt within real-world ranges (road-legal ~35 m, F1 ~20 m).
+  const stop = { rally: [28, 40], formula: [15, 24], hypercar: [17, 27], gt: [20, 30], trail: [36, 52] };
+  for (const [id, [lo, hi]] of Object.entries(stop)) {
+    const { dist } = run(id, flatT('asphalt'), 100, { brake: 1 }, 10);
+    assert.ok(dist > lo && dist < hi, `${id} 100-0 in ${dist.toFixed(1)} m (expected ${lo}–${hi})`);
+  }
+  // Lifting off slows the car more than drag alone (engine braking).
+  const coast = run('gt', flatT('asphalt'), 120, { throttle: 0 }, 1).v.speed * 3.6;
+  assert.ok(coast < 120 - 4, `engine braking: 120 → ${coast.toFixed(1)} km/h after 1 s`);
+  // Sand drags every car: the 4x4 is slower on dunes than on dirt.
+  const top = s => run('trail', flatT(s), 0, { throttle: 1 }, 15).v.speed;
+  assert.ok(top('dune') < top('dirt') * 0.9, 'dunes slow even the 4x4');
+  // A steep cross-slope (40%) slides a parked car on ice (μ 0.35), not on asphalt.
+  const slide = s => { const { v } = run('rally', flatT(s, 0, 0.4), 0, { handbrake: 1 }, 2); return Math.abs(v.x); };
+  assert.ok(slide('ice') > 1 && slide('asphalt') < 0.2, `cross-slope: ice ${slide('ice').toFixed(2)} m, asphalt ${slide('asphalt').toFixed(2)} m`);
+  // Weight transfer: hard braking unloads the rear, so the car rotates more
+  // in a braked turn than in a coasting one (lift-off / trail-brake oversteer).
+  const yaw = brake => { const { v } = run('gt', flatT('asphalt'), 120, { brake, steer: 0.6 }, 0.8); return Math.abs(v.heading); };
+  assert.ok(yaw(1) > 0 && yaw(0) > 0, 'turns');
+  const { v: vb } = run('gt', flatT('asphalt'), 120, { brake: 1 }, 0.5);
+  assert.ok(vb.ax < -9, `braking decel registers (${(vb.ax / 9.81).toFixed(2)} g)`);
+  assert.ok(vb.pitch < 0, 'nose dives under braking');
+  console.log('realism checks passed');
+}

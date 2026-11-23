@@ -7,6 +7,12 @@ const RHO = 1.225;       // air density
 const CRR = 0.015;       // rolling resistance
 // Rolling drag factor on loose ground for low cars (× car.offroad).
 const LOOSE = { gravel: 1, dirt: 1, grass: 1, sand: 1.3, snow: 1.2, dune: 2.5 };
+// Rolling-resistance coefficient by surface (all cars).
+const ROLL = { asphalt: 0.012, kerb: 0.015, pad: 0.012, cobble: 0.02, gravel: 0.025, dirt: 0.03,
+  grass: 0.045, sand: 0.1, snow: 0.06, ice: 0.01, dune: 0.15 };
+// Surface roughness: shakes the body (and the camera with it).
+const ROUGH = { asphalt: 0.05, kerb: 1, pad: 0.05, cobble: 0.7, gravel: 0.45, dirt: 0.35,
+  grass: 0.4, sand: 0.25, snow: 0.2, ice: 0, dune: 0.3 };
 
 /** Flat ground; keeps the solver usable (and testable) without terrain. */
 export const FLAT_TERRAIN = {
@@ -92,6 +98,9 @@ export class ArcadePhysics {
     v.y = this._ground.h;
     v.groundPrev = v.y;
     v.vgS = 0;
+    v.load = 1;
+    v.ax = v.ay = v.landT = 0;
+    v.thrIn = v.brkIn = 0;
     v.pitch = this._ground.pitch;
     v.roll = this._ground.roll;
     this._snapshot(v);
@@ -134,21 +143,56 @@ export class ArcadePhysics {
     v.hit = 0;
     const c = v.car;
     const T = this.terrain;
-    const { throttle, brake, handbrake = 0 } = v.intents;
+    const { handbrake = 0 } = v.intents;
     const m = c.mass;
+
+    // Pedals don't act instantly: brake pressure builds over ~0.12 s and the
+    // engine responds over ~0.15 s (keyboard input is all-or-nothing).
+    const pedal = (cur, want, up, downRate) =>
+      cur + Math.max(-dt / downRate, Math.min(dt / up, want - cur));
+    v.thrIn = pedal(v.thrIn ?? 0, v.intents.throttle, 0.15, 0.05);
+    v.brkIn = pedal(v.brkIn ?? 0, v.intents.brake, 0.12, 0.06);
+    const throttle = v.thrIn, brake = v.brkIn;
 
     // Axes and velocity components.
     let fx = -Math.sin(v.heading), fz = -Math.cos(v.heading);
     let rx = Math.cos(v.heading), rz = -Math.sin(v.heading);
     let vLong = v.vx * fx + v.vz * fz;
     let vLat = v.vx * rx + v.vz * rz;
+    const vLong0 = vLong;
 
     v.surface = T.surfaceAt(v.x, v.z);
     const ground = !v.airborne || v.airTime < 0.08; // tiny hops keep traction
-    const mu = ground ? (c.tyres[v.surface] ?? c.tyres.grass) : 0;
+    const slope = ground ? T.slopeAlong(v.x, v.z, fx, fz) : 0;  // rise per m ahead
+    const side = ground ? T.slopeAlong(v.x, v.z, rx, rz) : 0;   // rise per m to the right
+    v.landT = Math.max(0, (v.landT ?? 0) - dt);
+    // Vertical load factor from the road's curvature over a car length: over
+    // a crest the car goes light (less grip), in a dip it's pressed down.
+    if (ground) {
+      const L = 4, d = Math.sign(vLong) || 1;
+      const h0 = T.heightAt(v.x, v.z);
+      const kappa = (T.heightAt(v.x + fx * L * d, v.z + fz * L * d) + T.heightAt(v.x - fx * L * d, v.z - fz * L * d) - 2 * h0) / (L * L);
+      const want = Math.max(0.3, Math.min(1.6, 1 + (vLong * vLong * kappa) / G));
+      v.load = (v.load ?? 1) + (want - (v.load ?? 1)) * Math.min(1, dt * 8);
+    }
+
+    // --- Tyre load ------------------------------------------------------------------
+    // Weight (less on steep ground) × vertical load factor (light over crests,
+    // heavy in compressions) + aero downforce. Tyres lose a little μ as load
+    // rises (load sensitivity), and grip just after a hard landing.
     const down = 0.5 * RHO * c.cla * vLong * vLong;
-    const N = m * G + down;
-    const axle = 0.5 * mu * N; // grip budget per axle
+    const N = m * G / Math.sqrt(1 + slope * slope + side * side) * (v.load ?? 1) + down;
+    let mu = ground ? (c.tyres[v.surface] ?? c.tyres.grass) : 0;
+    mu *= Math.pow(Math.max(0.5, N / (m * G)), -0.08);
+    if (v.landT > 0) mu *= 0.6;
+
+    // Longitudinal weight transfer (from last step's acceleration, lagged by
+    // the suspension): braking loads the front, accelerating loads the rear.
+    const wr = c.drive < 1 ? c.drive : 0.5;            // static rear weight share
+    const shift = ((v.ax ?? 0) * c.cgh) / (c.wheelbase * G);
+    const shareR = Math.max(0.15, Math.min(0.85, wr + shift));
+    const axleF = mu * N * (1 - shareR), axleR = mu * N * shareR; // grip budget per axle
+    const mF = m * (1 - wr), mR = m * wr;
 
     // --- Steering demand ----------------------------------------------------------
     // Cornering gets first call on the tyres; traction control / ABS then only
@@ -157,38 +201,56 @@ export class ArcadePhysics {
     v.steer += (v.intents.steer - v.steer) * Math.min(1, dt * 10);
     const delta = v.steer * c.steer / (1 + Math.abs(vLong) / 35); // less lock at speed
     const rWant = (vLong * Math.tan(delta)) / c.wheelbase;
-    // Lateral need per axle: the turn asked for, plus catching any slide
-    // (stability control: a sliding car gets less power, so it doesn't spin).
-    const latNeed = Math.min(axle, (m * 0.5) * (Math.abs(rWant * vLong) + Math.abs(vLat) * 4));
-    const longAvail = Math.sqrt(Math.max(0, axle * axle - latNeed * latNeed)); // per axle
+    // Lateral need: the turn asked for, holding the car on a cross-slope, plus
+    // catching any slide (stability control: a sliding car gets less power).
+    const aNeed = Math.abs(rWant * vLong) + Math.abs(vLat) * 4 + G * Math.abs(side);
+    const latF = Math.min(axleF, mF * aNeed), latR = Math.min(axleR, mR * aNeed);
+    const availF = Math.sqrt(Math.max(0, axleF * axleF - latF * latF));
+    const availR = Math.sqrt(Math.max(0, axleR * axleR - latR * latR));
 
     // --- Longitudinal forces -------------------------------------------------------
     let Fdrive = 0, Fbrake = 0;
-    // Driven wheels' share of the budget (AWD: both axles; RWD: rear load share).
-    const tractionCap = longAvail * (c.drive < 1 ? c.drive / 0.5 : 2);
+    const rwd = c.drive < 1;
+    const tractionCap = rwd ? availR : availF + availR;
     const power = Fmax => Math.min((c.power * 1000) / Math.max(Math.abs(vLong), 4), Fmax);
     if (throttle > 0) {
       const limiter = 1 - smoothstep(c.vmax / 3.6 * 0.97, c.vmax / 3.6, vLong);
       Fdrive = throttle * power(tractionCap) * limiter;
     }
+    // Brakes (ABS): the driver's brake and the corner share each axle's
+    // friction circle in proportion. Braking hard mid-corner therefore costs
+    // steering (understeer) and unloads the rear (oversteer) — unlike drive
+    // power, which traction control only gives out of what steering leaves.
+    let brakeF = 0, brakeR = 0;
     if (brake > 0) {
-      if (vLong > 0.5) Fbrake = brake * Math.min(c.brakeG * N, longAvail * 2);
-      else Fdrive -= brake * power(tractionCap) * 0.35; // reverse gear
+      if (vLong > 0.5) {
+        const want = brake * Math.min(c.brakeG * N, mu * N);
+        // Brake bias leans further forward than the weight does (as real cars
+        // are set up), so the rear isn't the first axle to give up.
+        brakeR = want * shareR * 0.7;
+        brakeF = want - brakeR;
+        const fitF = Math.hypot(latF, brakeF), fitR = Math.hypot(latR, brakeR);
+        if (fitF > axleF) brakeF *= axleF / fitF;
+        if (fitR > axleR) brakeR *= axleR / fitR;
+        Fbrake = brakeF + brakeR;
+      } else Fdrive -= brake * power(tractionCap) * 0.35; // reverse gear
     }
-    const Fhb = handbrake && Math.abs(vLong) > 0.5 ? handbrake * axle * 0.8 : 0;
-    // Low cars on loose ground plough: resistance grows with speed, like a gravel trap.
+    const Fhb = handbrake && Math.abs(vLong) > 0.5 ? handbrake * axleR * 1.6 : 0;
+    // Off throttle the drivetrain drags the car down (engine braking).
+    const Feb = ground && throttle < 0.05 && vLong > 1 ? c.engineBrake * m * G * Math.min(1, vLong / 8) : 0;
+    // Rolling resistance by surface (sand and snow are hard work for every
+    // car); low cars on loose ground also plough, more the faster they go.
     const loose = (LOOSE[v.surface] ?? 0) * c.offroad * (1 + Math.abs(vLong) / 6);
-    const Fres = 0.5 * RHO * c.cda * vLong * vLong + (CRR + loose) * m * G;
-    const Fslope = ground ? m * G * T.slopeAlong(v.x, v.z, fx, fz) : 0;
+    const crr = ROLL[v.surface] ?? ROLL.grass;
+    const Fres = 0.5 * RHO * c.cda * vLong * vLong + (crr + loose) * m * G + Feb;
+    const Fslope = ground ? m * G * slope : 0;
 
     // Per-axle longitudinal use → what's left for cornering (friction circle).
-    const rwd = c.drive < 1;
     const drive = Math.abs(Fdrive);
-    const frontLong = (rwd ? 0 : drive * 0.5) + Fbrake * 0.6;
-    const rearLong = (rwd ? drive : drive * 0.5) + Fbrake * 0.4 + Fhb;
-    const half = m * 0.5;
-    const aLatF = Math.sqrt(Math.max(0, axle * axle - frontLong * frontLong)) / half;
-    const aLatR = Math.sqrt(Math.max(0, axle * axle - rearLong * rearLong)) / half * (handbrake ? 0.35 : 1);
+    const frontLong = (rwd ? 0 : drive * 0.5) + brakeF;
+    const rearLong = (rwd ? drive : drive * 0.5) + brakeR + Fhb + (rwd ? Feb : Feb * 0.5);
+    const aLatF = Math.sqrt(Math.max(0, axleF * axleF - frontLong * frontLong)) / mF;
+    const aLatR = Math.sqrt(Math.max(0, axleR * axleR - rearLong * rearLong)) / mR * (handbrake ? 0.35 : 1);
 
     // Longitudinal: drive and slope accelerate; brakes/resistance only slow
     // the car down (they never push it backwards on their own).
@@ -220,6 +282,7 @@ export class ArcadePhysics {
     vLong = wx * nfx + wz * nfz;
     vLat = wx * nrx + wz * nrz;
     if (ground) {
+      vLat -= G * side * dt; // a cross-slope pushes the car downhill
       const catchUp = aLatR * dt;
       vLat -= Math.max(-catchUp, Math.min(catchUp, vLat));
     }
@@ -231,8 +294,15 @@ export class ArcadePhysics {
       (handbrake && Math.abs(vLong) < 1 && Math.abs(Fslope) < mu * N));
     if (parked) {
       vLong = 0;
-      vLat *= 0.5;
+      // Sideways too, unless the cross-slope beats the tyres (ice on a camber).
+      if (Math.abs(side) < mu) vLat *= 0.5;
     }
+
+    // Body accelerations (lagged like a suspension) for weight transfer and
+    // pitch/roll of the body.
+    const k = Math.min(1, dt * 8);
+    v.ax = (v.ax ?? 0) + (((vLong - vLong0) / dt) - (v.ax ?? 0)) * k;
+    v.ay = (v.ay ?? 0) + ((ground ? r * vLong : 0) - (v.ay ?? 0)) * k;
 
     v.vx = nfx * vLong + nrx * vLat;
     v.vz = nfz * vLong + nrz * vLat;
@@ -284,10 +354,17 @@ export class ArcadePhysics {
       if (v.y <= g.h) {
         v.landed = -v.vy;
         if (v.vy < -8) { v.vx *= 0.8; v.vz *= 0.8; } // hard landing
+        if (v.vy < -5) v.landT = 0.25;                // tyres/suspension recover: less grip
+        v.load = 1;
+        // Carry on with the ground's own vertical speed (downhill: falling with
+        // it), not 0 — and not the stale take-off value, which would bounce
+        // the car straight back up.
+        const vg = v.speed * this.terrain.slopeAlong(v.x, v.z, -Math.sin(v.heading), -Math.cos(v.heading));
         v.y = g.h;
-        v.vy = 0;
+        v.vy = Math.min(0, vg);
         v.airborne = false;
         v.groundPrev = g.h;
+        v.vgS = vg;
       }
       return;
     }
@@ -309,9 +386,18 @@ export class ArcadePhysics {
       v.airTime = 0;
       return;
     }
+    // Body follows the ground, squats/dives with acceleration, leans out of
+    // corners and shakes on rough surfaces.
+    const c = v.car;
+    const rough = (ROUGH[v.surface] ?? ROUGH.grass) * Math.min(1, Math.abs(v.speed) / 15);
+    const shake = rough * (0.004 + c.soft * 0.12);
+    const n1 = Math.sin(v.x * 3.1 + v.z * 1.7) * Math.sin(v.z * 2.3 - v.x * 0.9);
+    const n2 = Math.sin(v.x * 2.2 - v.z * 3.3) * Math.sin(v.x * 1.3 + v.z * 2.9);
+    const pitchT = g.pitch + Math.max(-0.08, Math.min(0.08, ((v.ax ?? 0) / G) * c.soft)) + n1 * shake;
+    const rollT = g.roll + Math.max(-0.1, Math.min(0.1, ((v.ay ?? 0) / G) * c.soft)) + n2 * shake;
     const k = Math.min(1, dt * 12);
-    v.pitch += (g.pitch - v.pitch) * k;
-    v.roll += (g.roll - v.roll) * k;
+    v.pitch += (pitchT - v.pitch) * k;
+    v.roll += (rollT - v.roll) * k;
   }
 
   _clampBounds(v) {

@@ -25,6 +25,18 @@ export function createAutopilot({ path, cum, surfaceAt = () => 'asphalt', height
     return denom <= 0 ? Infinity : Math.sqrt((mu * G * R * 0.5) / denom);
   }
 
+  /** Speed that keeps the car on the ground over a crest at d (v²·κ < ~0.9 g; small crests may still be jumped). */
+  function crestSpeed(c, d) {
+    if (!heightAt) return Infinity;
+    const h = q => { const p = pointAt(path, cum, q); return heightAt(p.x, p.z); };
+    const L = 6;
+    const kappa = (h(d + L) + h(d - L) - 2 * h(d)) / (L * L);
+    if (kappa >= -1e-3) return Infinity;
+    const down = 0.5 * 1.225 * c.cla / c.mass; // downforce helps
+    const k = -kappa - down * 0.6;
+    return k <= 0 ? Infinity : Math.sqrt((0.9 * G) / k);
+  }
+
   return {
     get s() { return s; },
     get progress() { return s / total; },
@@ -55,7 +67,7 @@ export function createAutopilot({ path, cum, surfaceAt = () => 'asphalt', height
       const react = speed * 0.4; // metres lost before braking bites (bumps, airtime)
       let allowed = Infinity;
       for (let d = 0; d < horizon; d += 3) {
-        const vc = cornerSpeed(c, s + d);
+        const vc = Math.min(cornerSpeed(c, s + d), crestSpeed(c, s + d));
         allowed = Math.min(allowed, Math.sqrt(vc * vc + 2 * aBrake * Math.max(0, d - react)));
       }
       const tooFast = speed > allowed;

@@ -254,7 +254,9 @@ export function createTerrain({ size = 400, cell = 2, seed = 1, base = {}, featu
     if (!f.closed) {
       for (const [i0, target, dir] of [[0, h0, 1], [steps - 1, h1, -1]]) {
         const delta = target - profile[i0];
-        const ramp = Math.max(20, Math.ceil(Math.abs(delta) / (maxGrade * 0.8)));
+        // Each end's ramp stays within its half, so a short road's two ends
+        // don't drag each other (and the road they join) off level.
+        const ramp = Math.min(Math.max(2, Math.floor(steps / 2)), Math.max(20, Math.ceil(Math.abs(delta) / (maxGrade * 0.8))));
         for (let k = 0; k < ramp && k < steps; k++) profile[i0 + dir * k] += delta * (1 - k / ramp);
       }
     }
