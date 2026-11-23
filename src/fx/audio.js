@@ -1,7 +1,11 @@
 /**
  * Synthesised car audio (no sample files):
- *   engine — saw + square through a low-pass, pitch from fake gears/rpm
- *   tyres  — filtered noise, colour depends on the surface
+ *   engine — saw + square through a low-pass, pitch from fake gears/rpm;
+ *            a short torque cut + clunk on upshifts, a blip on downshifts
+ *   tyres  — filtered noise, colour depends on the surface; louder when
+ *            the car slides on loose ground (scrub)
+ *   squeal — narrow band of noise on hard surfaces when sliding or braking hard
+ *   wind   — high-passed noise growing with speed²
  *   one-shots — landing thump, impact, countdown beeps
  *
  * Browsers only allow audio after a user gesture, so call `unlock()` from
@@ -18,11 +22,20 @@ const SURFACE_NOISE = {
   asphalt: ['lowpass', 380, 0.7, 0.004],
   kerb:    ['bandpass', 300, 2, 0.012],
   pad:     ['lowpass', 450, 0.7, 0.004],
+  snow:    ['lowpass', 1300, 0.6, 0.008],  // soft crunch
+  ice:     ['highpass', 3500, 0.7, 0.002], // thin hiss
+  dune:    ['lowpass', 520, 0.6, 0.012],   // deep sandy rumble
 };
+// Surfaces tyres can squeal on (rubber on a hard, grippy top).
+const HARD = new Set(['asphalt', 'kerb', 'pad', 'cobble']);
+// Loose surfaces get extra scrub noise while sliding.
+const LOOSE = new Set(['gravel', 'dirt', 'grass', 'sand', 'snow', 'dune']);
 
 export function createAudio() {
   let ctx = null;
   let master, engineGain, engineFilter, osc1, osc2, noiseGain, noiseFilter, cobbleLfo, cobbleDepth;
+  let squealGain, squealFilter, windGain;
+  let lastGear = 0, shiftCut = 0;
   let muted = false;
   let rpm = 1000;
 
@@ -69,6 +82,23 @@ export function createAudio() {
     cobbleLfo.start();
     noise.connect(noiseFilter).connect(noiseGain).connect(master);
     noise.start();
+
+    // Squeal: the same noise through a narrow resonant band, wobbling a bit.
+    squealFilter = ctx.createBiquadFilter();
+    squealFilter.type = 'bandpass';
+    squealFilter.frequency.value = 1150;
+    squealFilter.Q.value = 9;
+    squealGain = ctx.createGain();
+    squealGain.gain.value = 0;
+    noise.connect(squealFilter).connect(squealGain).connect(master);
+
+    // Wind: high-passed noise.
+    const windFilter = ctx.createBiquadFilter();
+    windFilter.type = 'highpass';
+    windFilter.frequency.value = 1800;
+    windGain = ctx.createGain();
+    windGain.gain.value = 0;
+    noise.connect(windFilter).connect(windGain).connect(master);
   }
 
   const ramp = (param, value, t = 0.08) => param.setTargetAtTime(value, ctx.currentTime, t);
@@ -114,6 +144,13 @@ export function createAudio() {
       const gearSpan = vmax / a.gears;
       const gear = Math.min(a.gears - 1, Math.floor(speed / gearSpan));
       const inGear = (speed - gear * gearSpan) / gearSpan;
+      // Gear changes: upshift = brief torque cut + clunk, downshift = blip.
+      if (gear !== lastGear && speed > 2) {
+        if (gear > lastGear && throttle > 0.3) { shiftCut = 0.09; oneShot('square', 95, 55, 0.07, 0.05); }
+        else if (gear < lastGear) rpm = Math.min(a.redline, rpm * 1.18);
+      }
+      lastGear = gear;
+      shiftCut = Math.max(0, shiftCut - dt);
       const low = gear === 0 ? a.idle : a.redline * 0.62;
       let target = low + (a.redline - low) * inGear;
       if (speed < 0.5) target = a.idle + throttle * (a.redline - a.idle) * 0.4; // revving on the spot
@@ -124,14 +161,27 @@ export function createAudio() {
       ramp(osc1.frequency, f, 0.03);
       ramp(osc2.frequency, f / 2, 0.03);
       ramp(engineFilter.frequency, 500 + throttle * 1800 + rpm * 0.15, 0.05);
-      ramp(engineGain.gain, 0.10 + throttle * 0.16, 0.08);
+      ramp(engineGain.gain, shiftCut > 0 ? 0.05 : 0.10 + throttle * 0.16, shiftCut > 0 ? 0.01 : 0.08);
 
       const [type, freq, q, k] = SURFACE_NOISE[v.surface] ?? SURFACE_NOISE.grass;
       if (noiseFilter.type !== type) noiseFilter.type = type;
       ramp(noiseFilter.frequency, freq, 0.1);
       noiseFilter.Q.value = q;
-      const tyres = v.airborne ? 0 : Math.min(0.35, speed * k * 2);
+      const slide = Math.abs(v.slip ?? 0);
+      const scrub = LOOSE.has(v.surface) ? 1 + Math.min(1.5, slide / 3) : 1;
+      const tyres = v.airborne ? 0 : Math.min(0.45, speed * k * 2 * scrub);
       ramp(noiseGain.gain, tyres, 0.08);
+
+      // Squeal: sliding, or hard braking at speed (ABS chatter), on hard ground.
+      let squeal = 0;
+      if (!v.airborne && HARD.has(v.surface) && speed > 4) {
+        squeal = Math.min(1, Math.max(0, (slide - 1.2) / 4));
+        if ((v.brkIn ?? 0) > 0.6 && speed > 12) squeal = Math.max(squeal, 0.35 * v.brkIn);
+      }
+      ramp(squealGain.gain, squeal * 0.16, 0.05);
+      ramp(squealFilter.frequency, 1050 + slide * 25 + Math.sin(performance.now() / 70) * 60, 0.03);
+
+      ramp(windGain.gain, Math.min(0.12, (speed / 90) ** 2 * 0.12), 0.2);
       cobbleDepth.gain.value = v.surface === 'cobble' ? tyres * 0.8 : 0;
       cobbleLfo.frequency.value = 6 + speed * 1.2;
     },
