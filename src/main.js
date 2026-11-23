@@ -46,7 +46,7 @@ camera.updateProjectionMatrix();
 
 const physics = new ArcadePhysics({
   bounds: world.bounds,
-  terrain: { heightAt: terrain.heightAt, slopeAlong: terrain.slopeAlong, surfaceAt: surfaces.surfaceAt },
+  terrain: { heightAt: terrain.heightAt, slopeAlong: terrain.slopeAlong, surfaceAt: world.surfaceAt },
 });
 world.colliders.forEach(s => physics.addStatic(s));
 // Chosen car persists per browser (guarded: storage may be unavailable).

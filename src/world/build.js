@@ -6,6 +6,7 @@ import { Instancer } from './instancer.js';
 import { createTerrain } from './terrain.js';
 import { createSurfaces } from './surfaces.js';
 import { createTerrainMesh } from './terrainMesh.js';
+import { createBiomes } from './biomes.js';
 import { pointAt } from './path.js';
 import { circle, box, circleContact } from '../physics/shapes.js';
 import { SpatialHash } from '../physics/spatialHash.js';
@@ -44,7 +45,7 @@ export function buildWorld(scene, map) {
   // --- Ground ----------------------------------------------------------------
   const features = [
     ...map.terrain.features,
-    ...map.zones.map(z => ({ type: 'pad', pos: z.pos, r: z.r, y: z.y })),
+    ...map.zones.filter(z => z.flatten !== false).map(z => ({ type: 'pad', pos: z.pos, r: z.r, y: z.y, pre: z.flatten === 'pre', falloff: z.flatten === 'pre' ? 25 : undefined })),
     ...map.trails.map(t => ({ type: 'trail', ...t })),
   ];
   const terrain = createTerrain({ size: map.size, ...map.terrain, features });
@@ -52,12 +53,21 @@ export function buildWorld(scene, map) {
     size: map.size,
     trails: terrain.trails,
     pads: map.zones.map(z => ({ pos: z.pos, r: z.r, surface: z.surface })),
+    patches: map.patches ?? [],
   });
+  const biomes = createBiomes(map.biomes ?? []);
+  /** Off-road ground follows the biome: sand in the desert, snow up high. */
+  const surfaceAt = (x, z) => {
+    const s = surfaces.surfaceAt(x, z);
+    if (s !== 'grass') return s;
+    const b = biomes.biomeAt(x, z, terrain.heightAt(x, z));
+    return b.snow > 0.5 ? 'snow' : b.desert > 0.5 ? 'sand' : 'grass';
+  };
 
   scene.background = new THREE.Color('#121612');
   scene.fog = new THREE.Fog('#121612', 55, 130);
 
-  const ground = createTerrainMesh(terrain, surfaces);
+  const ground = createTerrainMesh(terrain, surfaces, biomes);
   scene.add(ground);
 
   // Sea: brightness ripples over time so the `~ ≈` glyphs shimmer.
@@ -524,6 +534,20 @@ export function buildWorld(scene, map) {
     }
   }
 
+  // --- Red/white marker poles along roads that need them (snow) -------------------
+  for (const t of terrain.trails.filter(tr => tr.poles)) {
+    let n = 0;
+    for (let d = 5; d < t.length - 5; d += 15) {
+      const p = pointAt(t.path, t.cum, d);
+      for (const sgn of [-1, 1]) {
+        const off = t.width / 2 + 2;
+        const x = p.x + p.tz * off * sgn, z = p.z - p.tx * off * sgn;
+        if (!isClear(x, z, 0.2, 0.5)) continue;
+        put(G.block(), (n++ % 2) ? '#ff4040' : '#f4f4f4', CHARSET.KERB, x, h(x, z), z, 0.12, 1.1, 0.12, { shadow: false });
+      }
+    }
+  }
+
   // --- Scatter (trees, rocks) -----------------------------------------------------
   const KINDS = {
     conifer(x, z, rand) {
@@ -550,6 +574,30 @@ export function buildWorld(scene, map) {
       put(G.cone(), '#2e5233', CHARSET.FOLIAGE, x, y + 0.5, z, 0.8 + rand() * 0.3, ch, 0.8 + rand() * 0.3, { cut: true });
       return solid(circle(x, z, 0.5, ch, y));
     },
+    snowPine(x, z, rand) {
+      const y = h(x, z);
+      const ch = 4 + rand() * 4, cr = 1.3 + rand() * 0.8;
+      put(G.trunk(), '#5a4030', CHARSET.WOOD, x, y, z, 1, 1.2, 1, { cut: true });
+      put(G.cone(), '#2e5a3e', CHARSET.FOLIAGE, x, y + 0.8, z, cr, ch, cr, { cut: true });
+      put(G.cone(), '#f2f6ff', CHARSET.SNOW, x, y + 0.8 + ch * 0.55, z, cr * 0.55, ch * 0.45, cr * 0.55, { cut: true }); // snow cap
+      return solid(circle(x, z, 0.45, ch, y));
+    },
+    cactus(x, z, rand) {
+      // Original desert plant: a ribbed column with one or two arms.
+      const y = h(x, z), ht = 1.6 + rand() * 1.4;
+      put(G.cylinder(), '#5f8f4a', CHARSET.FOLIAGE, x, y, z, 0.28, ht, 0.28, { cut: true });
+      for (const side of rand() < 0.5 ? [1] : [1, -1]) {
+        const ay = y + ht * (0.4 + rand() * 0.3);
+        put(G.cylinder(), '#5f8f4a', CHARSET.FOLIAGE, x + side * 0.45, ay, z, 0.18, 0.12, 0.18, { rz: Math.PI / 2 * side });
+        put(G.cylinder(), '#5f8f4a', CHARSET.FOLIAGE, x + side * 0.6, ay, z, 0.18, ht * 0.35, 0.18);
+      }
+      return solid(circle(x, z, 0.4, ht, y));
+    },
+    shrub(x, z, rand) {
+      const s = 0.4 + rand() * 0.5;
+      put(G.ball(), rand() < 0.5 ? '#9a8a5a' : '#7f7a4a', CHARSET.FOLIAGE, x, h(x, z) + s * 0.4, z, s * 1.3, s * 0.7, s * 1.3, { shadow: false });
+      return null;
+    },
     rock(x, z, rand) {
       const s = 0.5 + rand() * 1.3;
       put(G.rock(), '#9aa3ad', CHARSET.ROCK, x, h(x, z) + s * 0.3, z, s, s * 0.8, s, { yaw: rand() * 6, rx: rand() * 3 });
@@ -563,6 +611,11 @@ export function buildWorld(scene, map) {
       const x = x0 + rand() * (x1 - x0), z = z0 + rand() * (z1 - z0);
       const roll = rand(); // keep the RNG stream stable regardless of rejections
       if (h(x, z) < 1.5) continue;
+      if (sc.biome) {
+        const b = biomes.biomeAt(x, z, h(x, z));
+        const w = sc.biome === 'temperate' ? 1 - b.snow - b.desert : b[sc.biome];
+        if (w < 0.5) continue;
+      }
       if (terrain.normalAt(x, z, nrm).y < 0.82) continue;
       if (!isClear(x, z, 1.2, sc.clearance)) continue;
       KINDS[sc.kind](x, z, rng(Math.floor(roll * 1e9)));
@@ -572,7 +625,7 @@ export function buildWorld(scene, map) {
   inst.build(scene);
 
   return {
-    terrain, surfaces, colliders, route, bounds: map.bounds, spawn: map.spawn, waterLevel: map.waterLevel,
+    terrain, surfaces, surfaceAt, biomes, colliders, route, bounds: map.bounds, spawn: map.spawn, waterLevel: map.waterLevel,
     /** Per-frame: sea ripples; at dusk/night the sea faintly reflects the sky. */
     update(dt, t, look) {
       seaTime.value = t;

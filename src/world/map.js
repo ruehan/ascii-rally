@@ -7,12 +7,13 @@ import world from './regions/world.js';
 import core from './regions/core.js';
 import gp from './regions/gp.js';
 import highway, { loop24 } from './regions/highway.js';
+import snow from './regions/snow.js';
 
 /**
  * Regions are concatenated in order. Terrain features apply in type order
  * (see terrain.js), so region order only matters within a type.
  */
-const regions = [world, core, gp, highway];
+const regions = [world, core, gp, highway, snow];
 const all = key => regions.flatMap(r => r[key] ?? []);
 
 export default {
@@ -31,6 +32,8 @@ export default {
   zones: all('zones'),
   stages: all('stages'),
   scatter: all('scatter'),
+  biomes: all('biomes'),
+  patches: all('patches'),
 
   loop24,
 };

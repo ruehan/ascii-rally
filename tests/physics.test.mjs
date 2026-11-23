@@ -96,3 +96,12 @@ console.log('all physics tests passed');
   assert.ok(Math.abs(v.z) > 0.5, 'rolls once released');
   console.log('handbrake hold passed');
 }
+
+// every car defines grip for every surface (a missing one would silently fall back)
+{
+  const { SURFACE_NAMES } = await import(root + '/src/world/surfaces.js');
+  for (const [id, c] of Object.entries(CARS)) {
+    for (const s of SURFACE_NAMES) assert.ok(typeof c.tyres[s] === 'number', `${id} lacks tyres.${s}`);
+  }
+  console.log('tyre table complete');
+}

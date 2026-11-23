@@ -31,11 +31,9 @@ export default {
     { type: 'hill', pos: [-540, -400], r: 90, height: 100 },
     { type: 'ridge', points: [[-600, -200], [-480, -250], [-380, -300]], width: 120, height: 40 },
 
-    // Mountain rally (W).
-    { type: 'hill', pos: [-400, -60], r: 130, height: 50 },
-    { type: 'hill', pos: [-540, 40], r: 100, height: 40 },
-    { type: 'hill', pos: [-450, -185], r: 110, height: 55 }, // lifts the col to ~70 m
-    { type: 'pad', pos: [-440, -190], r: 14, falloff: 12 },  // the col
+    // Mountain rally (W): one broad massif peaking at the col, so the
+    // switchbacks climb steadily to it and the far side descends steadily.
+    { type: 'hill', pos: [-460, -170], r: 320, height: 58 },
 
     // Hillclimb hill (hidden road arrives later).
     { type: 'hill', pos: [-330, 175], r: 80, height: 45 },

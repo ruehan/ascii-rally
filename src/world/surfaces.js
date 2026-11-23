@@ -9,7 +9,7 @@ import { smoothPath, segmentDistance } from './path.js';
  *   sdf[k]  signed distance to the nearest surface edge, ±SDF_RANGE m → 0..255,
  *           128 = edge, >128 inside a road/pad
  */
-export const SURFACE_IDS = { grass: 0, gravel: 1, dirt: 2, cobble: 3, asphalt: 4, kerb: 5, pad: 6, sand: 7 };
+export const SURFACE_IDS = { grass: 0, gravel: 1, dirt: 2, cobble: 3, asphalt: 4, kerb: 5, pad: 6, sand: 7, snow: 8, ice: 9, dune: 10 };
 export const SURFACE_NAMES = Object.keys(SURFACE_IDS);
 export const SDF_RANGE = 4; // must exceed any placement clearance asked of insideAt()
 
@@ -32,7 +32,7 @@ function bends(path, closed) {
   return out;
 }
 
-export function createSurfaces({ size = 400, res = 0.5, trails = [], pads = [] }) {
+export function createSurfaces({ size = 400, res = 0.5, trails = [], pads = [], patches = [] }) {
   const n = Math.round(size / res);
   const origin = -size / 2;
   const ids = new Uint8Array(n * n);
@@ -81,7 +81,7 @@ export function createSurfaces({ size = 400, res = 0.5, trails = [], pads = [] }
     if (inside[k] >= 0 && inside[k] < 1.2 && ids[k] === SURFACE_IDS.asphalt) ids[k] = SURFACE_IDS.kerb;
   }
 
-  for (const p of pads) {
+  for (const p of [...pads, ...patches]) {
     const id = SURFACE_IDS[p.surface ?? 'pad'];
     const [cx, cz] = p.pos;
     const R = p.r + SDF_RANGE;

@@ -15,7 +15,9 @@ import { smoothPath, cumulative, forEachNear, segmentDistance } from './path.js'
  *   ridge  { points, width, height }                      additive bump along a polyline
  *   coast  { points, land, cliffTop, cliffWidth, rise, seaDepth, blend:[d0,d1] }
  *          coastline polyline west→east; land on the 'north' (-z, default) or 'south' side
- *   pad    { pos:[x,z], r, y?, falloff }                  flatten (y defaults to local average)
+ *   pad    { pos:[x,z], r, y?, falloff, pre? }            flatten (y defaults to local average);
+ *          `pre` pads only shape the ground roads are carved from (junctions
+ *          where several roads must meet at one height) and aren't re-applied
  *   flat   { polygon, y, falloff }                        flatten a polygon (no noise inside)
  *   plane  { polygon, origin:[x,z], y, slope:[dx,dz], falloff }  sloped flat plane
  *   trail  { points, width, shoulder, smooth, crests:[{at, length, height}] }
@@ -171,7 +173,7 @@ export function createTerrain({ size = 400, cell = 2, seed = 1, base = {}, featu
   }
 
   // Pads (first pass, so trails entering them sample the flattened height).
-  const pads = byType('pad').map(f => ({ ...f, y: f.y ?? averageAround(sample, f.pos, f.r) }));
+  let pads = byType('pad').map(f => ({ ...f, y: f.y ?? averageAround(sample, f.pos, f.r) }));
   const applyPads = () => {
     for (const f of pads) {
       const [cx, cz] = f.pos;
@@ -247,6 +249,15 @@ export function createTerrain({ size = 400, cell = 2, seed = 1, base = {}, featu
         profile[i] = src[i] + (sum / cnt - src[i]) * w;
       }
     }
+    // Re-pin open ends to the ground they join (the limiter may have moved
+    // them): ramp the difference out over a grade-respecting distance.
+    if (!f.closed) {
+      for (const [i0, target, dir] of [[0, h0, 1], [steps - 1, h1, -1]]) {
+        const delta = target - profile[i0];
+        const ramp = Math.max(20, Math.ceil(Math.abs(delta) / (maxGrade * 0.8)));
+        for (let k = 0; k < ramp && k < steps; k++) profile[i0 + dir * k] += delta * (1 - k / ramp);
+      }
+    }
     for (const c of crests) {
       for (let i = 0; i < steps; i++) profile[i] += c.height * bump(Math.abs(i - c.at), c.length / 2);
     }
@@ -264,6 +275,7 @@ export function createTerrain({ size = 400, cell = 2, seed = 1, base = {}, featu
     trails.push({ ...f, path, cum, length: total, profileAt });
   }
 
+  pads = pads.filter(p => !p.pre);
   applyPads();
 
   return {

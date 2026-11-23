@@ -8,6 +8,9 @@ const MID = new THREE.Color('#857a45');   // dry grass / ochre
 const HIGH = new THREE.Color('#a89a70');  // sand-stone uplands
 const ROCK = new THREE.Color('#8f7f6c');  // cliffs
 const SEABED = new THREE.Color('#6f8d8f');
+// Biome palettes (low → high, and steep rock).
+const SNOW_LOW = new THREE.Color('#dfe8f2'), SNOW_HIGH = new THREE.Color('#f6f9ff'), SNOW_ROCK = new THREE.Color('#7d8794');
+const DESERT_LOW = new THREE.Color('#d9b27a'), DESERT_HIGH = new THREE.Color('#e9c98a'), DESERT_ROCK = new THREE.Color('#b07850');
 
 // Road / pad colours, indexed by SURFACE_IDS (grass keeps the vertex colour).
 const SURFACE_COLORS = [];
@@ -19,6 +22,10 @@ SURFACE_COLORS[SURFACE_IDS.asphalt] = '#9aa3b5';
 SURFACE_COLORS[SURFACE_IDS.kerb] = '#d94a3a';
 SURFACE_COLORS[SURFACE_IDS.pad] = '#ddd3bc';
 SURFACE_COLORS[SURFACE_IDS.sand] = '#e3d3a4';
+SURFACE_COLORS[SURFACE_IDS.snow] = '#f2f6ff';
+SURFACE_COLORS[SURFACE_IDS.ice] = '#bfe3ff';
+SURFACE_COLORS[SURFACE_IDS.dune] = '#e9c98a';
+for (let i = 0; i < 16; i++) SURFACE_COLORS[i] ??= '#000000';
 
 function dataTexture(data, n, filter) {
   const t = new THREE.DataTexture(data, n, n, THREE.RedFormat, THREE.UnsignedByteType);
@@ -37,12 +44,14 @@ const CHUNK = 50; // cells per chunk side (100 m at 2 m cells)
  * physics matches the picture. Chunk borders duplicate vertices; normals and
  * colours come from the global grid, so there are no seams.
  */
-export function createTerrainMesh(terrain, surfaces) {
+export function createTerrainMesh(terrain, surfaces, biomes = null) {
   const { n, origin, cell, heights } = terrain;
   const count = n * n;
   const pos = new Float32Array(count * 3);
   const nor = new Float32Array(count * 3);
   const col = new Float32Array(count * 3);
+  const bio = new Float32Array(count * 2); // snow, desert weights (info pass charsets)
+  const tmp = new THREE.Color();
   const c = new THREE.Color();
   const at = (ix, iz) => heights[Math.min(n - 1, Math.max(0, iz)) * n + Math.min(n - 1, Math.max(0, ix))];
 
@@ -58,10 +67,17 @@ export function createTerrainMesh(terrain, surfaces) {
       const l = Math.hypot(nx, ny, nz);
       nor[k * 3] = nx / l; nor[k * 3 + 1] = ny / l; nor[k * 3 + 2] = nz / l;
 
+      const steep = 1 - THREE.MathUtils.smoothstep(ny / l, 0.6, 0.85);
       if (y < 0.5) c.copy(SEABED);
       else if (y < 8) c.copy(LOW).lerp(MID, Math.max(0, (y - 3) / 5));
       else c.copy(MID).lerp(HIGH, Math.min(1, (y - 8) / 10));
-      c.lerp(ROCK, 1 - THREE.MathUtils.smoothstep(ny / l, 0.6, 0.85)); // steep → rock
+      c.lerp(ROCK, steep); // steep → rock
+      if (biomes && y >= 0.5) {
+        const b = biomes.biomeAt(pos[k * 3], pos[k * 3 + 2], y);
+        if (b.snow > 0) c.lerp(tmp.copy(SNOW_LOW).lerp(SNOW_HIGH, Math.min(1, y / 80)).lerp(SNOW_ROCK, steep * 0.7), b.snow);
+        if (b.desert > 0) c.lerp(tmp.copy(DESERT_LOW).lerp(DESERT_HIGH, Math.min(1, (y - 3) / 8)).lerp(DESERT_ROCK, steep), b.desert);
+        bio[k * 2] = b.snow; bio[k * 2 + 1] = b.desert;
+      }
       col[k * 3] = c.r; col[k * 3 + 1] = c.g; col[k * 3 + 2] = c.b;
     }
   }
@@ -72,10 +88,12 @@ export function createTerrainMesh(terrain, surfaces) {
     for (let cx = 0; cx < n - 1; cx += CHUNK) {
       const w = Math.min(CHUNK, n - 1 - cx) + 1, h = Math.min(CHUNK, n - 1 - cz) + 1;
       const p = new Float32Array(w * h * 3), q = new Float32Array(w * h * 3), r = new Float32Array(w * h * 3);
+      const bb = new Float32Array(w * h * 2);
       for (let j = 0; j < h; j++) {
         for (let i = 0; i < w; i++) {
-          const src = ((cz + j) * n + cx + i) * 3, dst = (j * w + i) * 3;
+          const v = (cz + j) * n + cx + i, src = v * 3, dst = (j * w + i) * 3;
           for (let e = 0; e < 3; e++) { p[dst + e] = pos[src + e]; q[dst + e] = nor[src + e]; r[dst + e] = col[src + e]; }
+          bb[(j * w + i) * 2] = bio[v * 2]; bb[(j * w + i) * 2 + 1] = bio[v * 2 + 1];
         }
       }
       const index = new Uint32Array((w - 1) * (h - 1) * 6);
@@ -91,6 +109,7 @@ export function createTerrainMesh(terrain, surfaces) {
       geo.setAttribute('position', new THREE.BufferAttribute(p, 3));
       geo.setAttribute('normal', new THREE.BufferAttribute(q, 3));
       geo.setAttribute('color', new THREE.BufferAttribute(r, 3));
+      geo.setAttribute('biome', new THREE.BufferAttribute(bb, 2));
       geo.setIndex(new THREE.BufferAttribute(index, 1));
       geo.computeBoundingSphere();
       geo.computeBoundingBox();
@@ -118,10 +137,10 @@ export function createTerrainMesh(terrain, surfaces) {
         uniform sampler2D tSurfId;
         uniform float uWorldMin;
         uniform float uWorldSize;
-        uniform vec3 uSurfColor[8];`)
+        uniform vec3 uSurfColor[16];`)
       .replace('#include <color_fragment>', `#include <color_fragment>
         float sid = floor(texture2D(tSurfId, (vWorldXZ - uWorldMin) / uWorldSize).r * 255.0 + 0.5);
-        if (sid > 0.5) diffuseColor.rgb = uSurfColor[int(clamp(sid, 0.0, 7.0))];
+        if (sid > 0.5) diffuseColor.rgb = uSurfColor[int(clamp(sid, 0.0, 15.0))];
         // Kerbs: red/white blocks along the road.
         if (abs(sid - ${SURFACE_IDS.kerb}.0) < 0.5 && fract((vWorldXZ.x + vWorldXZ.y) * 0.5) < 0.5) diffuseColor.rgb = vec3(0.95);`);
   };

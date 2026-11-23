@@ -5,7 +5,8 @@ import { CARS, DEFAULT_CAR } from '../vehicle/cars.js';
 const G = 9.81;          // real gravity for traction, slopes and braking
 const RHO = 1.225;       // air density
 const CRR = 0.015;       // rolling resistance
-const LOOSE = new Set(['gravel', 'dirt', 'grass', 'sand']);
+// Rolling drag factor on loose ground for low cars (× car.offroad).
+const LOOSE = { gravel: 1, dirt: 1, grass: 1, sand: 1.3, snow: 1.2, dune: 2.5 };
 
 /** Flat ground; keeps the solver usable (and testable) without terrain. */
 export const FLAT_TERRAIN = {
@@ -90,6 +91,7 @@ export class ArcadePhysics {
     this._sampleGround(v);
     v.y = this._ground.h;
     v.groundPrev = v.y;
+    v.vgS = 0;
     v.pitch = this._ground.pitch;
     v.roll = this._ground.roll;
     this._snapshot(v);
@@ -143,7 +145,7 @@ export class ArcadePhysics {
 
     v.surface = T.surfaceAt(v.x, v.z);
     const ground = !v.airborne || v.airTime < 0.08; // tiny hops keep traction
-    const mu = ground ? (c.tyres[v.surface] ?? 1) : 0;
+    const mu = ground ? (c.tyres[v.surface] ?? c.tyres.grass) : 0;
     const down = 0.5 * RHO * c.cla * vLong * vLong;
     const N = m * G + down;
     const axle = 0.5 * mu * N; // grip budget per axle
@@ -175,7 +177,7 @@ export class ArcadePhysics {
     }
     const Fhb = handbrake && Math.abs(vLong) > 0.5 ? handbrake * axle * 0.8 : 0;
     // Low cars on loose ground plough: resistance grows with speed, like a gravel trap.
-    const loose = LOOSE.has(v.surface) ? c.offroad * (1 + Math.abs(vLong) / 6) : 0;
+    const loose = (LOOSE[v.surface] ?? 0) * c.offroad * (1 + Math.abs(vLong) / 6);
     const Fres = 0.5 * RHO * c.cda * vLong * vLong + (CRR + loose) * m * G;
     const Fslope = ground ? m * G * T.slopeAlong(v.x, v.z, fx, fz) : 0;
 
@@ -292,13 +294,16 @@ export class ArcadePhysics {
     // Grounded: the car falls under gravity (+ downforce) and the ground can
     // only push it up. Where the ground drops away faster than that (crests),
     // a gap builds up over successive steps; past 5 cm the car is airborne.
-    const vg = (g.h - (v.groundPrev ?? g.h)) / dt; // ground's vertical speed under the car
+    // Ground's vertical speed under the car, low-passed: the suspension soaks
+    // up small bumps so only sustained crests can throw the car upwards.
+    const vgRaw = (g.h - (v.groundPrev ?? g.h)) / dt;
     v.groundPrev = g.h;
+    v.vgS = (v.vgS ?? vgRaw) + (vgRaw - (v.vgS ?? vgRaw)) * Math.min(1, dt * 12);
     v.vy -= Gv * dt;
     v.y += v.vy * dt;
     if (v.y <= g.h) {
       v.y = g.h;
-      v.vy = Math.max(v.vy, vg);
+      v.vy = Math.max(v.vy, v.vgS);
     } else if (v.y > g.h + 0.05) {
       v.airborne = true;
       v.airTime = 0;

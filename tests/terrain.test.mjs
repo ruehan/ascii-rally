@@ -138,7 +138,7 @@ console.log('all terrain tests passed');
 // any convex vertical curve tighter than ~740 m launches it.
 {
   const map = (await import(root + '/src/world/map.js')).default;
-  const features = [...map.terrain.features, ...map.zones.map(z => ({ type: 'pad', pos: z.pos, r: z.r, y: z.y })), ...map.trails.map(t => ({ type: 'trail', ...t }))];
+  const features = [...map.terrain.features, ...map.zones.filter(z => z.flatten !== false).map(z => ({ type: 'pad', pos: z.pos, r: z.r, y: z.y, pre: z.flatten === 'pre', falloff: z.flatten === 'pre' ? 25 : undefined })), ...map.trails.map(t => ({ type: 'trail', ...t }))];
   const T = createTerrain({ size: map.size, ...map.terrain, features });
   // Minimum convex radius (m) ≈ (design speed)² / 12.
   const FAST = { gp: 600, straight: 700, link: 400, 'coast-e': 300, pass: 200, vigna: 250, valley: 150 };

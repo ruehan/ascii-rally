@@ -6,7 +6,7 @@ const { pointAt } = await import(root + '/src/world/path.js');
 const G = 9.81;
 const wrap = a => Math.atan2(Math.sin(a), Math.cos(a));
 
-export function createAutopilot({ path, cum, surfaceAt = () => 'asphalt', start = 0 }) {
+export function createAutopilot({ path, cum, surfaceAt = () => 'asphalt', heightAt = null, start = 0 }) {
   const total = cum[cum.length - 1];
   let s = start;
   let stuckFor = 0, reverseFor = 0;
@@ -21,8 +21,8 @@ export function createAutopilot({ path, cum, surfaceAt = () => 'asphalt', start 
     const mu = c.tyres[surfaceAt(p.x, p.z)] ?? 1;
     // Solve v² = μ·(g + k·v²)·R  with k = ½ρ·ClA/m (downforce grows with v²).
     const k = 0.5 * 1.225 * c.cla / c.mass;
-    const denom = 1 - mu * k * R * 0.6;
-    return denom <= 0 ? Infinity : Math.sqrt((mu * G * R * 0.6) / denom);
+    const denom = 1 - mu * k * R * 0.5;
+    return denom <= 0 ? Infinity : Math.sqrt((mu * G * R * 0.5) / denom);
   }
 
   return {
@@ -44,7 +44,13 @@ export function createAutopilot({ path, cum, surfaceAt = () => 'asphalt', start 
       // Braking: the slowest "corner speed reachable by braking" ahead.
       const c = v.car;
       const mu = c.tyres[surfaceAt(v.x, v.z)] ?? 1;
-      const aBrake = Math.min(c.brakeG, mu) * G * 0.6;
+      // Downhill eats into braking: subtract the slope's share of gravity.
+      let downhill = 0;
+      if (heightAt) {
+        const p0 = pointAt(path, cum, s), p1 = pointAt(path, cum, s + 15);
+        downhill = Math.max(0, (heightAt(p0.x, p0.z) - heightAt(p1.x, p1.z)) / 15);
+      }
+      const aBrake = Math.max(1.5, Math.min(c.brakeG, mu) * G * 0.6 - downhill * G);
       const horizon = speed * speed / (2 * aBrake) + 25;
       const react = speed * 0.4; // metres lost before braking bites (bumps, airtime)
       let allowed = Infinity;

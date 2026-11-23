@@ -33,6 +33,10 @@ export const CHARSET = {
   ROOF: 19,
   SAND: 20,
   CLIFF: 21,
+  SNOW: 22,
+  SNOW_HIGH: 23,
+  ICE: 24,
+  DUNE: 25,
 };
 
 export const CHARSET_GLYPHS = [
@@ -58,6 +62,10 @@ export const CHARSET_GLYPHS = [
   /* ROOF       */ ` .^A`,
   /* SAND       */ ` .,`,
   /* CLIFF      */ ` .:;|!`,
+  /* SNOW       */ ` .·*`,
+  /* SNOW_HIGH  */ ` .'*^`,
+  /* ICE        */ ` -_=`,
+  /* DUNE       */ ` .~-`,
 ];
 
 if (CHARSET_GLYPHS.length > MAX_SETS) {

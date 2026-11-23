@@ -26,7 +26,7 @@ export default {
         [-90, -40], [-122, -54], [-152, -34], [-162, 0], [-142, 30], [-152, 64], [-130, 94],
         [-100, 110], [-70, 126], [-42, 130]],
       // Crests sit on straights so you land with road ahead.
-      crests: [{ at: 125, length: 20, height: 2.2 }, { at: 200, length: 22, height: 2.8 }, { at: 465, length: 22, height: 3.0 }],
+      crests: [{ at: 125, length: 20, height: 2.2 }, { at: 188, length: 24, height: 1.8 }, { at: 465, length: 22, height: 3.0 }],
     },
     {
       id: 'town', surface: 'cobble', width: 6, shoulder: 4, smooth: 30,

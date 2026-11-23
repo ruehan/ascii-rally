@@ -12,6 +12,10 @@ SURFACE_SET[SURFACE_IDS.asphalt] = CHARSET.ASPHALT;
 SURFACE_SET[SURFACE_IDS.kerb] = CHARSET.KERB;
 SURFACE_SET[SURFACE_IDS.pad] = CHARSET.FLOOR;
 SURFACE_SET[SURFACE_IDS.sand] = CHARSET.SAND;
+SURFACE_SET[SURFACE_IDS.snow] = CHARSET.SNOW;
+SURFACE_SET[SURFACE_IDS.ice] = CHARSET.ICE;
+SURFACE_SET[SURFACE_IDS.dune] = CHARSET.DUNE;
+for (let i = 0; i < 16; i++) SURFACE_SET[i] ??= -1;
 
 /**
  * Info-pass material for the terrain: per-fragment charset (height band,
@@ -27,12 +31,15 @@ export function createTerrainInfoMaterial({ surfaceIdTex, surfaceSdfTex, size, b
       uWorldSize: { value: size },
       uBands: { value: new THREE.Vector2(...bands) },
       uContour: { value: contour },
-      uSurfSet: { value: SURFACE_SET.map(v => v ?? -1) },
+      uSurfSet: { value: SURFACE_SET },
     },
     vertexShader: /* glsl */ `
+      attribute vec2 biome;
       varying vec3 vWorld;
       varying vec3 vViewNormal;
+      varying vec2 vBiome;
       void main() {
+        vBiome = biome;
         vec4 wp = modelMatrix * vec4(position, 1.0);
         vWorld = wp.xyz;
         vViewNormal = normalize(normalMatrix * normal);
@@ -47,9 +54,11 @@ export function createTerrainInfoMaterial({ surfaceIdTex, surfaceSdfTex, size, b
       uniform float uWorldSize;
       uniform vec2 uBands;
       uniform float uContour;
-      uniform float uSurfSet[8];
+      uniform float uSurfSet[16];
       varying vec3 vWorld;
       varying vec3 vViewNormal;
+      varying vec2 vBiome;
+      float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 
       void main() {
         vec2 uv = (vWorld.xz - uWorldMin) / uWorldSize;
@@ -67,8 +76,12 @@ export function createTerrainInfoMaterial({ surfaceIdTex, surfaceSdfTex, size, b
         vec3 wn = normalize(cross(dFdx(vWorld), dFdy(vWorld)));
         float set = vWorld.y < uBands.x ? ${CHARSET.TERRA_LOW}.0
                   : vWorld.y < uBands.y ? ${CHARSET.TERRA_MID}.0 : ${CHARSET.TERRA_HIGH}.0;
+        // Biomes (dithered at their borders): snow / desert glyphs off-road.
+        float r = hash(floor(vWorld.xz * 2.0));
+        if (vBiome.x > r) set = vWorld.y > 60.0 ? ${CHARSET.SNOW_HIGH}.0 : ${CHARSET.SNOW}.0;
+        else if (vBiome.y > r) set = vWorld.y > 9.0 ? ${CHARSET.DUNE}.0 : ${CHARSET.SAND}.0;
         if (abs(wn.y) < 0.6) set = ${CHARSET.CLIFF}.0;
-        float surfSet = uSurfSet[int(clamp(sid, 0.0, 7.0))];
+        float surfSet = uSurfSet[int(clamp(sid, 0.0, 15.0))];
         bool onSurf = surfSet >= 0.0;
         if (onSurf) set = surfSet;
 

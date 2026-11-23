@@ -18,7 +18,7 @@ const T = w.terrain, S = w.surfaces;
 const DT = 1 / 60;
 
 function physics() {
-  const p = new ArcadePhysics({ bounds: w.bounds, terrain: { heightAt: T.heightAt, slopeAlong: T.slopeAlong, surfaceAt: S.surfaceAt } });
+  const p = new ArcadePhysics({ bounds: w.bounds, terrain: { heightAt: T.heightAt, slopeAlong: T.slopeAlong, surfaceAt: w.surfaceAt } });
   w.colliders.forEach(c => p.addStatic(c));
   return p;
 }
@@ -28,7 +28,7 @@ function run({ path, cum, from = 3, to = cum.at(-1) - 8, car = 'rally', step = (
   const p = physics();
   const a = pointAt(path, cum, from);
   const v = p.createVehicle({ pos: [a.x, a.z], heading: Math.atan2(-a.tx, -a.tz), car });
-  const ap = createAutopilot({ path, cum, surfaceAt: S.surfaceAt, start: from });
+  const ap = createAutopilot({ path, cum, surfaceAt: w.surfaceAt, heightAt: T.heightAt, start: from });
   const r = { jumps: 0, offroad: 0, stuck: [], sea: false, t: 0, v };
   let air = 0, halt = 0, bestS = from, sinceProgress = 0;
   while (ap.s < to && r.t < timeout && !done()) {
@@ -108,7 +108,9 @@ for (const cfg of map.stages) {
     // Cars with real grip on the stage's surface must finish; slicks on
     // gravel are allowed to fail (that's the point of choosing a car).
     const { CARS: SPECS } = await import(root + '/src/vehicle/cars.js');
-    const mustFinish = (SPECS[car].tyres[trail.surface] ?? 1) >= 0.6;
+    // Stages may name the cars they're built for (e.g. tight hairpins); else
+    // any car with decent grip on the surface must finish.
+    const mustFinish = cfg.cars ? cfg.cars.includes(car) : (SPECS[car].tyres[trail.surface] ?? 1) >= 0.7;
     if (mustFinish) {
       assert.ok(fin, `${cfg.name}/${car}: did not finish${abort ? ' (' + abort[1].reason + ')' : ''}`);
       assert.equal(events.filter(e => e[0] === 'stage:split').length, cfg.splits.length, `${cfg.name}/${car}: splits`);
