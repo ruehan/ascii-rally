@@ -1,6 +1,9 @@
 import * as THREE from 'three';
 import { MAX_SETS, CHARSET_GLYPHS, EDGE_GLYPHS, CHARSET, SET_DENSITY, SET_FILL } from './charsets.js';
 import { cutawayUniforms, CUTAWAY_GLSL } from './cutaway.js';
+import { installShadowMask } from './shadowMask.js';
+
+installShadowMask(); // before any scene material compiles
 
 const ATLAS_COLS = 16;
 const GLYPH_PX = 48; // resolution used only to measure ink coverage
@@ -168,6 +171,7 @@ const fragmentShader = /* glsl */ `
   uniform vec2 cells;          // cell grid size (cols, rows)
   uniform mat4 invViewProj;    // NDC → world, for world-anchored dithering
   uniform float airAmount;     // aerial perspective strength
+  uniform float shadowDark;    // tint multiplier in full sun shadow (same on every surface)
 
   vec2 cellUv(vec2 cell) { return (cell + 0.5) / cells; }
 
@@ -188,7 +192,9 @@ const fragmentShader = /* glsl */ `
 
     // Scene target is 2x the cell grid, so a linear sample at the cell
     // centre averages a 2x2 block — cheap anti-aliasing.
-    vec3 col = texture2D(tScene, uv).rgb;
+    vec4 scene = texture2D(tScene, uv);
+    vec3 col = scene.rgb;
+    float lit = scene.a; // sun shadow factor (shadowMask.js): 1 lit, 0 shadow
     col = pow(max(col, 0.0), vec3(1.0 / 2.2)); // render target is linear; approx sRGB
     float lum = clamp(dot(col, vec3(0.299, 0.587, 0.114)) * exposure + lumFloor, 0.0, 1.0);
 
@@ -269,6 +275,8 @@ const fragmentShader = /* glsl */ `
     vec3 hue = col / peak;
     vec3 tint = mix(monoColor, mix(hue, vec3(1.0), pastel), colorMode);
     if (soft && edge == 0.0) tint *= clamp(0.25 + 1.1 * lum, 0.25, 1.0); // shade by colour
+    // Cast shadows: one dark tone everywhere (pads, roads, grass, walls alike).
+    tint *= mix(shadowDark, 1.0, lit);
     // Aerial perspective: farther cells fade toward the air colour (less
     // saturated, less contrast), so depth reads in a top-down view.
     float air = smoothstep(32.0, 110.0, linearDepth(uv)) * airAmount;
@@ -403,6 +411,7 @@ export class AsciiRenderer {
         cells: { value: new THREE.Vector2(1, 1) },
         invViewProj: { value: new THREE.Matrix4() },
         airAmount: { value: 0.6 },
+        shadowDark: { value: 0.22 },
       },
       depthTest: false,
       depthWrite: false,
@@ -496,6 +505,9 @@ export class AsciiRenderer {
     u.pastel.value = look.pastel;
     u.edgeGain.value = look.edgeGain;
     u.background.value.copy(look.fog).multiplyScalar(0.8);
+    // Moonlight shadows stay faint; full-strength shadows need real sun.
+    const sun = Math.min(1, Math.max(0, (look.sunI - 0.4) / 1.6));
+    u.shadowDark.value = 1 - 0.78 * sun;
   }
 
   setColor(on) { this.material.uniforms.colorMode.value = on ? 1 : 0; }
