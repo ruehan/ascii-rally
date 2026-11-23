@@ -2,8 +2,13 @@ import * as THREE from 'three';
 import { AsciiRenderer } from './render/ascii.js';
 import { createLighting } from './render/lighting.js';
 import { createWorld } from './world/world.js';
-import { Car } from './car.js';
+import { ArcadePhysics } from './physics/arcade.js';
+import { CarView } from './vehicle/car.js';
+import { readIntents } from './vehicle/controller.js';
+import { createInput } from './core/input.js';
+import { createLoop } from './core/loop.js';
 
+// --- Renderer -------------------------------------------------------------
 const renderer = new THREE.WebGLRenderer({ antialias: false });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.shadowMap.enabled = true;
@@ -15,39 +20,28 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 200);
 const ascii = new AsciiRenderer(renderer, { cellSize: 8 });
 
-const { colliders, monument } = createWorld(scene);
+// --- World + physics ------------------------------------------------------
+const { colliders, monument, bounds } = createWorld(scene);
 const lighting = createLighting(scene);
 // Nothing past the fog is visible; keep the far plane tight for depth precision.
 camera.far = scene.fog.far + 10;
 camera.updateProjectionMatrix();
-const car = new Car(scene);
-car.object.position.set(0, 0, 4);
 
-// Input
-const input = { forward: false, backward: false, left: false, right: false };
-const KEYS = {
-  KeyW: 'forward', ArrowUp: 'forward',
-  KeyS: 'backward', ArrowDown: 'backward',
-  KeyA: 'left', ArrowLeft: 'left',
-  KeyD: 'right', ArrowRight: 'right',
-};
-function setKey(e, down) {
-  const k = KEYS[e.code];
-  if (k) { input[k] = down; e.preventDefault(); }
-}
-window.addEventListener('keydown', e => {
-  setKey(e, true);
-  if (e.repeat) return;
-  if (e.code === 'KeyC') ascii.toggleColor();
-  if (e.code === 'KeyE') ascii.toggleEdges();
-  if (e.code === 'Equal' || e.code === 'NumpadAdd') ascii.setCellSize(Math.min(24, ascii.cellSize + 2));
-  if (e.code === 'Minus' || e.code === 'NumpadSubtract') ascii.setCellSize(Math.max(6, ascii.cellSize - 2));
-  if (e.code === 'KeyR') { car.object.position.set(0, 0, 4); car.speed = 0; car.heading = 0; }
-});
-window.addEventListener('keyup', e => setKey(e, false));
-window.addEventListener('blur', () => Object.keys(input).forEach(k => (input[k] = false)));
+const SPAWN = { pos: [0, 4], heading: 0 };
+const physics = new ArcadePhysics({ bounds });
+colliders.forEach(s => physics.addStatic(s));
+const vehicle = physics.createVehicle(SPAWN);
+const car = new CarView(scene);
 
-// Resize
+// --- Input ----------------------------------------------------------------
+const input = createInput();
+input.onPress('KeyC', () => ascii.toggleColor());
+input.onPress('KeyE', () => ascii.toggleEdges());
+input.onPress(['Equal', 'NumpadAdd'], () => ascii.setCellSize(Math.min(24, ascii.cellSize + 2)));
+input.onPress(['Minus', 'NumpadSubtract'], () => ascii.setCellSize(Math.max(6, ascii.cellSize - 2)));
+input.onPress('KeyR', () => physics.resetVehicle(vehicle, SPAWN.pos, SPAWN.heading));
+
+// --- Resize ---------------------------------------------------------------
 function resize() {
   const w = window.innerWidth;
   const h = window.innerHeight;
@@ -59,34 +53,39 @@ function resize() {
 window.addEventListener('resize', resize);
 resize();
 
+// --- Camera ---------------------------------------------------------------
 // Fixed-angle follow camera (isometric-ish, always same view direction).
 const CAM_OFFSET = new THREE.Vector3(0, 16, 16);
-const camTarget = new THREE.Vector3();
+const camTarget = new THREE.Vector3(SPAWN.pos[0], 0, SPAWN.pos[1]);
 const camGoal = new THREE.Vector3();
-camera.position.copy(car.object.position).add(CAM_OFFSET);
+camera.position.copy(camTarget).add(CAM_OFFSET);
 
+// --- Loop -----------------------------------------------------------------
 const hudSpeed = document.getElementById('speed');
 const hudCalls = document.getElementById('calls');
-const clock = new THREE.Clock();
 
-function tick() {
-  const dt = Math.min(clock.getDelta(), 1 / 20);
-  const t = clock.elapsedTime;
+const loop = createLoop({
+  step(h) {
+    physics.setIntents(vehicle, readIntents(input.state));
+    physics.step(h);
+  },
+  render(alpha, dt) {
+    car.sync(vehicle, alpha, dt);
 
-  car.update(dt, input, colliders);
+    camTarget.copy(car.object.position);
+    camera.position.lerp(camGoal.copy(camTarget).add(CAM_OFFSET), 1 - Math.exp(-dt * 4));
+    camera.lookAt(camTarget);
+    lighting.follow(camTarget); // shadows stay sharp around the car
+
+    renderer.info.reset();
+    ascii.render(scene, camera);
+    hudCalls.textContent = renderer.info.render.calls;
+    hudSpeed.textContent = String(Math.round(Math.abs(vehicle.speed) * 3.6)).padStart(3, ' ');
+  },
+});
+
+loop.onUpdate((dt, t) => {
   monument.children.forEach((ring, i) => (ring.rotation.z = t * (0.4 + i * 0.3) * (i % 2 ? -1 : 1)));
+});
 
-  camTarget.copy(car.object.position);
-  camera.position.lerp(camGoal.copy(camTarget).add(CAM_OFFSET), 1 - Math.exp(-dt * 4));
-  camera.lookAt(camTarget);
-
-  // Shadow camera follows the car so shadows stay sharp nearby.
-  lighting.follow(camTarget);
-
-  renderer.info.reset();
-  ascii.render(scene, camera);
-  hudCalls.textContent = renderer.info.render.calls;
-  hudSpeed.textContent = String(Math.round(Math.abs(car.speed) * 3.6)).padStart(3, ' ');
-  requestAnimationFrame(tick);
-}
-tick();
+loop.start();

@@ -3,6 +3,7 @@ import { CHARSET, setCharset } from '../render/charsets.js';
 import { material } from './materials.js';
 import { geometries } from './geometries.js';
 import { Instancer } from './instancer.js';
+import { circle } from '../physics/shapes.js';
 
 // Placeholder world. Stage B replaces this with a data-driven map (docs/map-design.md).
 
@@ -55,7 +56,8 @@ function pillar(inst, rand, x, z) {
 }
 
 /**
- * Builds the static world. Returns colliders as circles on the XZ plane.
+ * Builds the static world. Returns collider shapes (physics/shapes.js),
+ * movement bounds, and animated objects.
  */
 export function createWorld(scene) {
   scene.background = new THREE.Color('#05070a');
@@ -90,7 +92,7 @@ export function createWorld(scene) {
     if (colliders.some(c => Math.hypot(c.x - x, c.z - z) < c.r + 3)) continue;
 
     const r = makers[Math.floor(rand() * makers.length)](inst, rand, x, z);
-    colliders.push({ x, z, r });
+    colliders.push(circle(x, z, r, 4));
   }
   inst.build(scene);
 
@@ -107,7 +109,7 @@ export function createWorld(scene) {
   monument.position.set(0, 0, -6);
   setCharset(monument, CHARSET.GOLD);
   scene.add(monument);
-  colliders.push({ x: 0, z: -6, r: 2.4 });
+  colliders.push(circle(0, -6, 2.4, 5));
 
-  return { colliders, monument };
+  return { colliders, monument, bounds: { type: 'circle', r: WORLD_RADIUS } };
 }
