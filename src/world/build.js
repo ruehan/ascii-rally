@@ -339,6 +339,53 @@ export function buildWorld(scene, map) {
     }
   }
 
+  // --- Special stages: start arch + box, split gates, chequered finish -------------
+  for (const st of map.stages ?? []) {
+    const tr = trail(st.trail);
+    const at = d => pointAt(tr.path, tr.cum, d);
+    const side = (p, off) => [p.x + p.tz * off, p.z - p.tx * off];
+    const gate = (d, postColor, beam) => {
+      const p = at(d);
+      const yaw = yawAlong(p.tx, p.tz);
+      const off = tr.width / 2 + 1;
+      let top = -Infinity;
+      for (const sgn of [-1, 1]) {
+        const [x, z] = side(p, off * sgn);
+        const y = h(x, z);
+        put(G.block(), postColor, CHARSET.GLYPH, x, y - 0.2, z, 0.5, 5.4, 0.5, { yaw, cut: true });
+        solid(circle(x, z, 0.4, 5.4, y));
+        top = Math.max(top, y + 4.6);
+      }
+      if (beam) beam(p, yaw, top, off);
+    };
+    // Start: arch in the stage colour, cones marking the start box behind it.
+    gate(st.from + 3, '#2b2b2b', (p, yaw, top, off) =>
+      put(G.block(), st.hue, CHARSET.GOLD, p.x, top, p.z, 1.2, 1.1, off * 2 + 0.6, { yaw, cut: true, shadow: false }));
+    const box = at(st.from);
+    for (const [a, b] of [[-3, -3], [-3, 3], [3, -3], [3, 3]]) {
+      const x = box.x + box.tx * a + box.tz * b, z = box.z + box.tz * a - box.tx * b;
+      put(G.cone(), '#ff7a1a', CHARSET.CHEVRON, x, h(x, z), z, 0.25, 0.6, 0.25, { shadow: false });
+    }
+    // Splits: plain posts with a gold flag.
+    for (const d of st.splits) {
+      gate(d, '#d9d9d9', (p, yaw, top) => {
+        const [x, z] = side(p, tr.width / 2 + 1);
+        put(G.block(), '#ffd166', CHARSET.GOLD, x, top - 0.4, z, 0.05, 0.9, 1.3, { yaw, shadow: false });
+      });
+    }
+    // Finish: chequered beam (alternating black/white blocks read as a pattern of glyphs/blanks).
+    gate(st.to, '#2b2b2b', (p, yaw, top, off) => {
+      const n = 10, w = (off * 2 + 0.6) / n;
+      for (let i = 0; i < n; i++) {
+        for (let r = 0; r < 2; r++) {
+          const d = -off - 0.3 + w * (i + 0.5);
+          const x = p.x + p.tz * d, z = p.z - p.tx * d;
+          put(G.block(), (i + r) % 2 ? '#f4f4f4' : '#1a1a1a', CHARSET.GLYPH, x, top + r * 0.55, z, 0.6, 0.55, w, { yaw, cut: true, shadow: false });
+        }
+      }
+    });
+  }
+
   // --- Scatter (trees, rocks) -----------------------------------------------------
   const KINDS = {
     conifer(x, z, rand) {

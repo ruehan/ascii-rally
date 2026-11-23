@@ -87,13 +87,22 @@ export default {
     },
   ],
 
-  // Zones: flat pads. Content/interaction arrives in stage C.
+  // Zones: flat pads. Stop on one (or press E) to open its panel (src/content).
   zones: [
-    { id: 'paddock', title: 'PADDOCK', pos: [0, 120], r: 22, surface: 'pad' },
-    { id: 'garage', title: 'GARAGE', pos: [-40, 146], r: 9, surface: 'pad' },
-    { id: 'pitwall', title: 'PIT WALL', pos: [36, 136], r: 8, surface: 'pad' },
-    { id: 'piazza', title: 'RALLY HQ', pos: [95, 10], r: 14, y: 16, surface: 'cobble' },
-    { id: 'lookout', title: 'LOOKOUT', pos: [-122, -163], r: 7, surface: 'pad' },
+    { id: 'paddock', title: 'PADDOCK', path: '~/paddock', content: 'season', pos: [0, 120], r: 22, surface: 'pad' },
+    { id: 'garage', title: 'GARAGE', path: '~/garage', content: 'skills', pos: [-40, 146], r: 9, surface: 'pad' },
+    { id: 'pitwall', title: 'PIT WALL', path: '~/pit-wall', content: 'contact', pos: [36, 136], r: 8, surface: 'pad' },
+    { id: 'piazza', title: 'RALLY HQ', path: '~/old-town/hq', content: 'hq', pos: [95, 10], r: 14, y: 16, surface: 'cobble' },
+    { id: 'lookout', title: 'LOOKOUT', path: '~/coast/lookout', content: 'about', pos: [-122, -163], r: 7, surface: 'pad' },
+  ],
+
+  // Special stages = projects. Ranges are metres along a trail (driven in
+  // increasing direction). One surface each, like a mixed-surface rally.
+  // target = the owner's time to beat (seconds).
+  stages: [
+    { id: 'ss1', name: 'SS1', trail: 'forest', from: 25, to: 265, splits: [100, 185], project: 'p1', hue: '#ffd166', target: 24 },
+    { id: 'ss2', name: 'SS2', trail: 'town', from: 40, to: 305, splits: [120, 220], project: 'p2', hue: '#ff6b6b', target: 28 },
+    { id: 'ss3', name: 'SS3', trail: 'coast', from: 222, to: 395, splits: [280, 340], project: 'p3', hue: '#4dabf7', target: 15 },
   ],
 
   // Scatter regions (rects: [minX, minZ, maxX, maxZ]).

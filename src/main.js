@@ -10,6 +10,10 @@ import { CarView } from './vehicle/car.js';
 import { readIntents } from './vehicle/controller.js';
 import { createInput } from './core/input.js';
 import { createLoop } from './core/loop.js';
+import { createBus } from './core/events.js';
+import { createZoneSystem } from './game/zones.js';
+import { createStageSystem } from './game/stages.js';
+import { createUI } from './ui/ui.js';
 
 // --- Renderer -------------------------------------------------------------
 const renderer = new THREE.WebGLRenderer({ antialias: false });
@@ -40,21 +44,68 @@ const vehicle = physics.createVehicle({ pos: world.spawn.pos, heading: world.spa
 const car = new CarView(scene);
 const rig = createCameraRig(camera, terrain);
 
+// --- Game systems ---------------------------------------------------------
+const bus = createBus();
+const zones = createZoneSystem({ zones: map.zones, bus });
+const stages = createStageSystem({ stages: map.stages, trails: terrain.trails, bus });
+const input = createInput();
+const ui = createUI({ bus, stages, onPanel: open => { input.enabled = !open; } });
+
 // Respawn point: last place the car was settled on a road, refreshed every second.
 const safe = { pos: [...world.spawn.pos], heading: world.spawn.heading, timer: 0 };
 function respawn(at = safe) {
+  stages.abort();
   physics.resetVehicle(vehicle, at.pos, at.heading);
   car.sync(vehicle, 1, 0);
   rig.snap(car.object);
 }
 
 // --- Input ----------------------------------------------------------------
-const input = createInput();
 input.onPress('KeyC', () => ascii.toggleColor());
 input.onPress('KeyG', () => ascii.toggleEdges());
 input.onPress(['Equal', 'NumpadAdd'], () => ascii.setCellSize(Math.min(24, ascii.cellSize + 2)));
 input.onPress(['Minus', 'NumpadSubtract'], () => ascii.setCellSize(Math.max(6, ascii.cellSize - 2)));
-input.onPress('KeyR', () => respawn(world.spawn));
+input.onPress('KeyR', () => { ui.close(); respawn(world.spawn); });
+input.onPress('KeyE', () => { if (!ui.close()) zones.open(); });
+input.onPress('Escape', () => ui.close());
+
+// --- Where am I / where next -------------------------------------------------
+function place() {
+  const z = zones.current;
+  if (z) return z.path;
+  const { x, z: zz } = vehicle;
+  if (zz < -110) return '~/coast';
+  if (x < -20) return '~/forest';
+  if (x > 30 && zz < 100) return '~/old-town';
+  return '~/valley';
+}
+
+/** Nearest stage start or zone not yet visited this session. */
+const targets = [
+  ...stages.stages.map(st => ({ id: st.id, name: `${st.name} start`, x: st.start.x, z: st.start.z })),
+  ...map.zones.filter(z => z.id !== 'paddock').map(z => ({ id: z.id, name: z.title.toLowerCase(), x: z.pos[0], z: z.pos[1] })),
+];
+function nextTarget() {
+  let best = null;
+  for (const t of targets) {
+    if (ui.visited.has(t.id)) continue;
+    const dist = Math.hypot(t.x - vehicle.x, t.z - vehicle.z);
+    if (!best || dist < best.dist) best = { ...t, dist };
+  }
+  if (!best || best.dist < 8) return null; // already there
+  best.bearing = ((Math.atan2(best.x - vehicle.x, -(best.z - vehicle.z)) * 180 / Math.PI) + 360) % 360;
+  return best;
+}
+let navTimer = 3;
+function navNote(nav, dt) {
+  navTimer -= dt;
+  if (navTimer > 0 || !nav || stages.state !== 'idle' || Math.abs(vehicle.speed) < 2) return;
+  navTimer = 8;
+  const heading = ((-vehicle.heading * 180 / Math.PI) % 360 + 360) % 360;
+  const rel = ((nav.bearing - heading) % 360 + 360) % 360;
+  const clock = Math.round(rel / 30) % 12 || 12;
+  ui.note(`> ${nav.name} · ${Math.round(nav.dist)}m · ${clock} o'clock`);
+}
 
 // --- Resize ---------------------------------------------------------------
 function resize() {
@@ -70,15 +121,15 @@ resize();
 respawn(world.spawn);
 
 // --- Loop -----------------------------------------------------------------
-const hudSpeed = document.getElementById('speed');
-const hudAlt = document.getElementById('alt');
-const hudCalls = document.getElementById('calls');
 const carFocus = new THREE.Vector3();
+let devIntents = null; // dev-only override (see window.__stage.drive)
 
 const loop = createLoop({
   step(h) {
-    physics.setIntents(vehicle, readIntents(input.state));
+    physics.setIntents(vehicle, devIntents ?? readIntents(input.state));
     physics.step(h);
+    zones.update(h, vehicle);
+    stages.update(h, vehicle);
 
     // Fell into the sea: back to the last safe spot.
     if (vehicle.y < world.waterLevel - 0.3) respawn();
@@ -99,9 +150,10 @@ const loop = createLoop({
 
     renderer.info.reset();
     ascii.render(scene, camera);
-    hudCalls.textContent = renderer.info.render.calls;
-    hudSpeed.textContent = String(Math.round(Math.abs(vehicle.speed) * 3.6)).padStart(3, ' ');
-    hudAlt.textContent = `${Math.round(vehicle.y)}m ${vehicle.surface ?? ''}`;
+
+    const nav = nextTarget();
+    navNote(nav, dt);
+    ui.update({ vehicle, place: place(), zone: zones.current, nav, dt });
   },
 });
 
@@ -111,7 +163,9 @@ loop.start();
 // Dev-only handle for debugging / screenshots from the console.
 if (import.meta.env.DEV) {
   window.__stage = {
-    physics, vehicle, terrain, surfaces,
+    physics, vehicle, terrain, surfaces, stages, zones, renderer,
     teleport(x, z, heading = 0) { respawn({ pos: [x, z], heading }); },
+    /** Force intents ({throttle, brake, steer}) or null to hand control back. */
+    drive(intents) { devIntents = intents; },
   };
 }
