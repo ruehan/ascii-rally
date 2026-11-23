@@ -34,7 +34,7 @@ export default {
     {
       // West exit towards the desert basin.
       id: 'gp-west', surface: 'asphalt', width: 7, shoulder: 5, smooth: 80, maxGrade: 0.06,
-      points: [[-245, 440], [-290, 430], [-330, 410], [-370, 395]],
+      points: [[-245, 440], [-290, 428], [-327, 414]], // T-junction on the desert loop
     },
   ],
   zones: [

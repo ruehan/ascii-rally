@@ -174,12 +174,14 @@ export function createTerrain({ size = 400, cell = 2, seed = 1, base = {}, featu
 
   // Pads (first pass, so trails entering them sample the flattened height).
   let pads = byType('pad').map(f => ({ ...f, y: f.y ?? averageAround(sample, f.pos, f.r) }));
+  const owned = new Uint8Array(heights.length); // cells under an already-carved road
   const applyPads = () => {
     for (const f of pads) {
       const [cx, cz] = f.pos;
       const fall = f.falloff ?? 8;
       const R = f.r + fall;
       forEachCell(grid, cx - R, cz - R, cx + R, cz + R, (k, x, z) => {
+        if (owned[k]) return; // roads were carved from the padded ground already
         const w = 1 - smoothstep(f.r, R, Math.hypot(x - cx, z - cz));
         heights[k] += (f.y - heights[k]) * w;
       });
@@ -189,8 +191,23 @@ export function createTerrain({ size = 400, cell = 2, seed = 1, base = {}, featu
 
   // Trails: smoothed long profile, flat cross-section, crests added on top.
   const trails = [];
-  for (const f of byType('trail')) {
-    const path = smoothPath(f.points, cell, f.closed);
+  const CUT_MAX = 18, FILL_MAX = 8;               // embankment reach (m) beyond the shoulder
+  // Carve order: a road whose end joins another road is carved after it, so
+  // the through road keeps a clean surface and the branch ramps to meet it.
+  const trailFeats = byType('trail').map(f => ({ f, path: smoothPath(f.points, cell, f.closed) }));
+  const joins = (a, b) => !a.f.closed && [a.path[0], a.path[a.path.length - 1]].some(([x, z]) =>
+    b.path.some(([px, pz], i) => i > 3 && i < b.path.length - 4 && Math.hypot(px - x, pz - z) < (b.f.width ?? 6) / 2 + 2));
+  const ordered = [], placed = new Set();
+  const visit = (t, stack = new Set()) => {
+    if (placed.has(t) || stack.has(t)) return;
+    stack.add(t);
+    for (const o of trailFeats) if (o !== t && joins(t, o)) visit(o, stack);
+    placed.add(t);
+    ordered.push(t);
+  };
+  trailFeats.forEach(t => visit(t));
+
+  for (const { f, path } of ordered) {
     const cum = cumulative(path);
     const total = cum[cum.length - 1];
     const { width = 6, shoulder = 6, smooth = 20, maxGrade = 0.22, crests = [] } = f;
@@ -259,6 +276,22 @@ export function createTerrain({ size = 400, cell = 2, seed = 1, base = {}, featu
         const ramp = Math.min(Math.max(2, Math.floor(steps / 2)), Math.max(20, Math.ceil(Math.abs(delta) / (maxGrade * 0.8))));
         for (let k = 0; k < ramp && k < steps; k++) profile[i0 + dir * k] += delta * (1 - k / ramp);
       }
+      // The ramps add to whatever grade was there: limit again so a long
+      // drop is spread instead of steepened. First clamp to the cones each
+      // pinned end can reach at maxGrade (peaks/dips between them are cut,
+      // ends never move), then the usual forward/backward passes.
+      const e0 = profile[0], e1 = profile[steps - 1];
+      for (let i = 0; i < steps; i++) {
+        const a = maxGrade * i, b = maxGrade * (steps - 1 - i);
+        const lo = Math.max(e0 - a, e1 - b), hi = Math.min(e0 + a, e1 + b);
+        if (lo <= hi) profile[i] = Math.max(lo, Math.min(hi, profile[i]));
+      }
+      for (let i = 1; i < steps; i++) {
+        profile[i] = Math.max(profile[i - 1] - maxGrade, Math.min(profile[i - 1] + maxGrade, profile[i]));
+      }
+      for (let i = steps - 2; i >= 0; i--) {
+        profile[i] = Math.max(profile[i + 1] - maxGrade, Math.min(profile[i + 1] + maxGrade, profile[i]));
+      }
     }
     for (const c of crests) {
       for (let i = 0; i < steps; i++) profile[i] += c.height * bump(Math.abs(i - c.at), c.length / 2);
@@ -269,11 +302,24 @@ export function createTerrain({ size = 400, cell = 2, seed = 1, base = {}, featu
       return profile[i0] + (profile[i1] - profile[i0]) * (i - i0);
     };
 
-    const R = width / 2 + shoulder;
+    // Carve. Roads already carved keep their surface (a later road joining
+    // or crossing must not dent it). The shoulder widens into an embankment
+    // where the road cuts deep into a hillside (≈1:1.5) or sits on a fill,
+    // instead of leaving a vertical wall beside the road.
+    const hw = width / 2;
+    const R = hw + Math.max(shoulder, CUT_MAX);
+    const mine = [];
     forEachNear(path, cum, R, grid, (k, d, s) => {
-      const w = 1 - smoothstep(width / 2, R, d);
-      heights[k] += (profileAt(s) - heights[k]) * w;
+      if (owned[k]) return;
+      const y = profileAt(s);
+      const depth = heights[k] - y; // > 0: cut into the hill, < 0: fill
+      const sh = Math.max(shoulder, depth > 0 ? Math.min(CUT_MAX, depth * 1.5) : Math.min(FILL_MAX, -depth * 1.5));
+      if (d > hw + sh) return;
+      const w = 1 - smoothstep(hw, hw + sh, d);
+      heights[k] += (y - heights[k]) * w;
+      if (d <= hw + 0.5) mine.push(k);
     });
+    for (const k of mine) owned[k] = 1;
     trails.push({ ...f, path, cum, length: total, profileAt });
   }
 

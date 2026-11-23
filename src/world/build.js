@@ -178,6 +178,18 @@ export function buildWorld(scene, map) {
   }
 
   /** Rows of houses lining a trail on both sides. */
+  /** True if a rotated w×d footprint is off roads/pads (by margin) and free of placed objects. */
+  const boxClear = (x, z, w, d, yaw, margin = 0.3) => {
+    const c = Math.cos(yaw), s = Math.sin(yaw);
+    for (let i = 0; i <= 4; i++) for (let j = 0; j <= 4; j++) {
+      const lx = (i / 4 - 0.5) * w, lz = (j / 4 - 0.5) * d;
+      const px = x + lx * c + lz * s, pz = z - lx * s + lz * c;
+      if (surfaces.insideAt(px, pz) > -margin) return false;
+      for (const o of occupied.query(px, pz, 0.3)) if (circleContact(o, px, pz, 0.3, _c)) return false;
+    }
+    return true;
+  };
+
   function lineStreet(trail, { rand, sides = [-1, 1], gap = 0.4, setback = 0.8, floors = [2, 3], chance = 1, flatRoof = false, start = 6 }) {
     const { path, cum, length } = trail;
     for (const side of sides) {
@@ -191,7 +203,7 @@ export function buildWorld(scene, map) {
         const x = p.x + p.tz * off * side;
         const z = p.z - p.tx * off * side;
         const yaw = yawAlong(p.tx, p.tz);
-        if (rand() < chance && isClear(x, z, Math.min(w, d) / 2, 0.3)) {
+        if (rand() < chance && boxClear(x, z, w, d, yaw, 0.3)) {
           const f = floors[0] + Math.floor(rand() * (floors[1] - floors[0] + 1));
           house(x, z, yaw, w, d, f, rand, { flatRoof });
         }
@@ -293,11 +305,11 @@ export function buildWorld(scene, map) {
 
     // Rally HQ: ceremonial start arch at the top of the steep street + timing board.
     const ay = h(qx, qz + 12);
-    for (const dx of [-4, 4]) {
+    for (const dx of [-5.2, 5.2]) {
       put(G.block(), '#2b2b2b', CHARSET.GLYPH, qx + dx, ay, qz + 12, 0.7, 5, 0.7, { cut: true });
       solid(circle(qx + dx, qz + 12, 0.5, 5, ay));
     }
-    put(G.block(), '#ffd166', CHARSET.GOLD, qx, ay + 4.2, qz + 12, 9, 1.3, 0.4, { cut: true, shadow: false });
+    put(G.block(), '#ffd166', CHARSET.GOLD, qx, ay + 4.2, qz + 12, 11.4, 1.3, 0.4, { cut: true, shadow: false });
     put(G.block(), '#1d2733', CHARSET.GLYPH, qx + 11, qy, qz - 3, 1, 4.5, 6, { cut: true });
     solid(box(qx + 11, qz - 3, 0.5, 3, 0, 4.5, qy));
 
@@ -326,7 +338,7 @@ export function buildWorld(scene, map) {
     // Sea wall on the downhill side, in short segments (gaps where other roads join).
     for (let s = 2; s < length - 2; s += 4.2) {
       const p = pointAt(path, cum, s);
-      const off = coast.width / 2 + 0.6;
+      const off = coast.width / 2 + 0.9;
       const lx = p.x + p.tz * off, lz = p.z - p.tx * off;
       const rx = p.x - p.tz * off, rz = p.z + p.tx * off;
       const [x, z] = h(lx, lz) < h(rx, rz) ? [lx, lz] : [rx, rz];
@@ -476,10 +488,18 @@ export function buildWorld(scene, map) {
     const gate = (d, postColor, beam) => {
       const p = at(d);
       const yaw = yawAlong(p.tx, p.tz);
-      const off = tr.width / 2 + 2; // clear of the road: cars have a ~1.4 m collision radius
-      let top = -Infinity;
+      const off0 = tr.width / 2 + 2; // clear of the road: cars have a ~1.4 m collision radius
+      let top = -Infinity, off = off0;
       for (const sgn of [-1, 1]) {
-        const [x, z] = side(p, off * sgn);
+        // In narrow streets the facades are closer: step the post in rather
+        // than standing it inside a house.
+        let x, z;
+        for (const o of [off0, off0 - 0.6, off0 - 1.1]) {
+          [x, z] = side(p, o * sgn);
+          if (isClear(x, z, 0.35, 0.2)) { off = Math.min(off, o); break; }
+          x = null;
+        }
+        if (x === null) continue;
         const y = h(x, z);
         put(G.block(), postColor, CHARSET.GLYPH, x, y - 0.2, z, 0.5, 5.4, 0.5, { yaw, cut: true });
         solid(circle(x, z, 0.4, 5.4, y));
