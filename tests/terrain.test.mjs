@@ -95,3 +95,25 @@ const slope = { heightAt: (x, z) => 0.1 * z, slopeAlong: (x, z, dx, dz) => 0.1 *
 }
 
 console.log('all terrain tests passed');
+
+// --- Chunked terrain mesh matches the heightfield and heightAt's triangle split ---
+{
+  const THREE = await import('three');
+  const { createTerrainMesh } = await import(root + '/src/world/terrainMesh.js');
+  const t = createTerrain({ ...cfg, size: 240 }); // 121² verts → 3×3 chunks
+  const s = createSurfaces({ size: 240, trails: [], pads: [] });
+  const group = createTerrainMesh(t, s);
+  assert.ok(group.children.length === 9, `chunks: ${group.children.length}`);
+  const tri = new THREE.Triangle(), p = new THREE.Vector3();
+  for (const mesh of group.children) {
+    const pos = mesh.geometry.attributes.position, idx = mesh.geometry.index.array;
+    for (let i = 0; i < pos.count; i += 7) near(pos.getY(i), t.heightAt(pos.getX(i), pos.getZ(i)), 1e-4, 'vertex y');
+    // Centroids of a few triangles must lie on heightAt.
+    for (let k = 0; k < idx.length; k += 6 * 97) {
+      tri.a.fromBufferAttribute(pos, idx[k]); tri.b.fromBufferAttribute(pos, idx[k + 1]); tri.c.fromBufferAttribute(pos, idx[k + 2]);
+      tri.getMidpoint(p);
+      near(p.y, t.heightAt(p.x, p.z), 1e-3, 'triangle split');
+    }
+  }
+  console.log('terrain chunk tests passed');
+}

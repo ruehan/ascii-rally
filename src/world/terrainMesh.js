@@ -28,10 +28,14 @@ function dataTexture(data, n, filter) {
   return t;
 }
 
+const CHUNK = 50; // cells per chunk side (100 m at 2 m cells)
+
 /**
- * Builds the terrain mesh from the baked heightfield. Smooth normals (facets
- * would turn every slope into edge glyphs); triangles split exactly like
- * terrain.heightAt so physics matches the picture.
+ * Builds the terrain from the baked heightfield as a Group of square chunks
+ * (frustum-culled individually). Smooth normals (facets would turn every
+ * slope into edge glyphs); triangles split exactly like terrain.heightAt so
+ * physics matches the picture. Chunk borders duplicate vertices; normals and
+ * colours come from the global grid, so there are no seams.
  */
 export function createTerrainMesh(terrain, surfaces) {
   const { n, origin, cell, heights } = terrain;
@@ -39,42 +43,60 @@ export function createTerrainMesh(terrain, surfaces) {
   const pos = new Float32Array(count * 3);
   const nor = new Float32Array(count * 3);
   const col = new Float32Array(count * 3);
-  const nrm = { x: 0, y: 1, z: 0 };
   const c = new THREE.Color();
+  const at = (ix, iz) => heights[Math.min(n - 1, Math.max(0, iz)) * n + Math.min(n - 1, Math.max(0, ix))];
 
   for (let iz = 0; iz < n; iz++) {
     for (let ix = 0; ix < n; ix++) {
       const k = iz * n + ix;
-      const x = origin + ix * cell, z = origin + iz * cell, y = heights[k];
-      pos.set([x, y, z], k * 3);
-      terrain.normalAt(x, z, nrm);
-      nor.set([nrm.x, nrm.y, nrm.z], k * 3);
+      const y = heights[k];
+      pos[k * 3] = origin + ix * cell;
+      pos[k * 3 + 1] = y;
+      pos[k * 3 + 2] = origin + iz * cell;
+      // Central differences on the grid (same as terrain.normalAt at grid points).
+      const nx = -(at(ix + 1, iz) - at(ix - 1, iz)), ny = 2 * cell, nz = -(at(ix, iz + 1) - at(ix, iz - 1));
+      const l = Math.hypot(nx, ny, nz);
+      nor[k * 3] = nx / l; nor[k * 3 + 1] = ny / l; nor[k * 3 + 2] = nz / l;
 
       if (y < 0.5) c.copy(SEABED);
       else if (y < 8) c.copy(LOW).lerp(MID, Math.max(0, (y - 3) / 5));
       else c.copy(MID).lerp(HIGH, Math.min(1, (y - 8) / 10));
-      c.lerp(ROCK, 1 - THREE.MathUtils.smoothstep(nrm.y, 0.6, 0.85)); // steep → rock
-      col.set([c.r, c.g, c.b], k * 3);
+      c.lerp(ROCK, 1 - THREE.MathUtils.smoothstep(ny / l, 0.6, 0.85)); // steep → rock
+      col[k * 3] = c.r; col[k * 3 + 1] = c.g; col[k * 3 + 2] = c.b;
     }
   }
 
-  // Same split as terrain.heightAt: diagonal (ix+1,iz)–(ix,iz+1).
-  const index = new Uint32Array((n - 1) * (n - 1) * 6);
-  let i = 0;
-  for (let iz = 0; iz < n - 1; iz++) {
-    for (let ix = 0; ix < n - 1; ix++) {
-      const a = iz * n + ix, b = a + 1, cc = a + n, d = cc + 1;
-      index.set([a, cc, b, b, cc, d], i);
-      i += 6;
+  // One geometry per chunk; same diagonal split as terrain.heightAt.
+  const geometries = [];
+  for (let cz = 0; cz < n - 1; cz += CHUNK) {
+    for (let cx = 0; cx < n - 1; cx += CHUNK) {
+      const w = Math.min(CHUNK, n - 1 - cx) + 1, h = Math.min(CHUNK, n - 1 - cz) + 1;
+      const p = new Float32Array(w * h * 3), q = new Float32Array(w * h * 3), r = new Float32Array(w * h * 3);
+      for (let j = 0; j < h; j++) {
+        for (let i = 0; i < w; i++) {
+          const src = ((cz + j) * n + cx + i) * 3, dst = (j * w + i) * 3;
+          for (let e = 0; e < 3; e++) { p[dst + e] = pos[src + e]; q[dst + e] = nor[src + e]; r[dst + e] = col[src + e]; }
+        }
+      }
+      const index = new Uint32Array((w - 1) * (h - 1) * 6);
+      let t = 0;
+      for (let j = 0; j < h - 1; j++) {
+        for (let i = 0; i < w - 1; i++) {
+          const a = j * w + i, b = a + 1, cc = a + w, d = cc + 1;
+          index[t++] = a; index[t++] = cc; index[t++] = b;
+          index[t++] = b; index[t++] = cc; index[t++] = d;
+        }
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(p, 3));
+      geo.setAttribute('normal', new THREE.BufferAttribute(q, 3));
+      geo.setAttribute('color', new THREE.BufferAttribute(r, 3));
+      geo.setIndex(new THREE.BufferAttribute(index, 1));
+      geo.computeBoundingSphere();
+      geo.computeBoundingBox();
+      geometries.push(geo);
     }
   }
-
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
-  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
-  geo.setIndex(new THREE.BufferAttribute(index, 1));
-  geo.computeBoundingSphere();
 
   const idTex = dataTexture(surfaces.ids, surfaces.n, THREE.NearestFilter);
   const sdfTex = dataTexture(surfaces.sdf, surfaces.n, THREE.LinearFilter);
@@ -104,10 +126,14 @@ export function createTerrainMesh(terrain, surfaces) {
         if (abs(sid - ${SURFACE_IDS.kerb}.0) < 0.5 && fract((vWorldXZ.x + vWorldXZ.y) * 0.5) < 0.5) diffuseColor.rgb = vec3(0.95);`);
   };
 
-  const mesh = new THREE.Mesh(geo, mat);
-  mesh.receiveShadow = true;
-  mesh.userData.infoMaterial = createTerrainInfoMaterial({
-    surfaceIdTex: idTex, surfaceSdfTex: sdfTex, size: surfaces.size,
-  });
-  return mesh;
+  const infoMaterial = createTerrainInfoMaterial({ surfaceIdTex: idTex, surfaceSdfTex: sdfTex, size: surfaces.size });
+  const group = new THREE.Group();
+  group.name = 'terrain';
+  for (const geo of geometries) {
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.receiveShadow = true;
+    mesh.userData.infoMaterial = infoMaterial;
+    group.add(mesh);
+  }
+  return group;
 }
