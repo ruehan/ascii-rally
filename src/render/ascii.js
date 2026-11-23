@@ -338,7 +338,7 @@ export class AsciiRenderer {
         colorMode: { value: 1 },
         monoColor: { value: new THREE.Color('#5dff8a') },
         background: { value: new THREE.Color('#0d1012') },
-        edgesOn: { value: 1 },
+        edgesOn: { value: 0 },          // outlines off by default (G toggles)
         edgeThreshold: { value: 0.9 },
         depthWeight: { value: 1.5 },
         dither: { value: 0.3 },
@@ -454,9 +454,11 @@ export class AsciiRenderer {
     u.value = u.value ? 0 : 1;
   }
 
+  /** Toggles outline glyphs; returns true when they're now on. */
   toggleEdges() {
     const u = this.material.uniforms.edgesOn;
     u.value = u.value ? 0 : 1;
+    return u.value === 1;
   }
 
   _watch(scene) {

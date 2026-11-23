@@ -12,6 +12,7 @@ export function createZoneSystem({ zones, bus }) {
   let current = null;
   let dwell = 0;
   let opened = false;
+  let skip = false; // suppress the next auto-open (e.g. the spawn pad on return visits)
 
   function update(dt, v) {
     if (current) {
@@ -25,7 +26,8 @@ export function createZoneSystem({ zones, bus }) {
       current = zones.find(z => Math.hypot(v.x - z.pos[0], v.z - z.pos[1]) < z.r) ?? null;
       if (!current) return;
       dwell = 0;
-      opened = false;
+      opened = skip;
+      skip = false;
       bus.emit('zone:enter', { zone: current });
     }
     dwell = Math.abs(v.speed) > 0.5 ? 0 : dwell + dt;
@@ -39,5 +41,10 @@ export function createZoneSystem({ zones, bus }) {
     return true;
   }
 
-  return { update, open, get current() { return current; } };
+  return {
+    update, open,
+    /** Don't auto-open the next zone entered (E still opens it). */
+    skipAutoOpen() { if (current) opened = true; else skip = true; },
+    get current() { return current; },
+  };
 }

@@ -23,6 +23,7 @@ import { milestones } from './content/content.js';
 import { buildMapGrid } from './ui/mapGrid.js';
 import { createMapUI } from './ui/map.js';
 import { createPerfOverlay } from './ui/perf.js';
+import { t, i18n, zoneName } from './ui/i18n.js';
 
 // --- Renderer -------------------------------------------------------------
 const renderer = new THREE.WebGLRenderer({ antialias: false });
@@ -110,19 +111,28 @@ function respawn(at = safe) {
 
 // --- Input ----------------------------------------------------------------
 input.onPress('KeyC', () => ascii.toggleColor());
-input.onPress('KeyG', () => ascii.toggleEdges());
+// Outlines: off by default, the choice persists.
+const EDGES = 'stage~/edges';
+try { if (localStorage.getItem(EDGES) === '1') ascii.toggleEdges(); } catch { /* default off */ }
+input.onPress('KeyG', () => {
+  const on = ascii.toggleEdges();
+  try { localStorage.setItem(EDGES, on ? '1' : '0'); } catch { /* not persisted */ }
+  ui.note(t('note.edges', { on }));
+});
+input.onPress('KeyL', () => i18n.toggle());
+input.onPress('KeyH', () => ui.toggleHelp());
 input.onPress(['Equal', 'NumpadAdd'], () => ascii.setCellSize(Math.min(24, ascii.cellSize + 2)));
 input.onPress(['Minus', 'NumpadSubtract'], () => ascii.setCellSize(Math.max(6, ascii.cellSize - 2)));
 input.onPress('KeyR', () => { ui.close(); respawn(world.spawn); });
 input.onPress('KeyQ', () => selectCar(CAR_ORDER[(CAR_ORDER.indexOf(carId) + 1) % CAR_ORDER.length]));
 input.onPress('KeyE', () => { if (!mapUI.isOpen && !ui.close()) zones.open(); });
 input.onPress('Escape', () => { if (!mapUI.close()) ui.close(); });
-input.onPress('KeyV', () => ui.note(`> camera: ${rig.toggleMode()}`));
-input.onPress('KeyN', () => ui.note(`> sound: ${audio.toggleMute() ? 'off' : 'on'}`));
+input.onPress('KeyV', () => ui.note(t('note.camera', { mode: rig.toggleMode() })));
+input.onPress('KeyN', () => ui.note(t('note.sound', { on: !audio.toggleMute() })));
 input.onPress('KeyT', () => {
-  if (loop24.state === 'running') return ui.note('> 24H running — the clock is the race');
+  if (loop24.state === 'running') return ui.note(t('note.time24'));
   preset = (preset + 1) % PRESETS.length;
-  ui.note(`> time: ${['afternoon', 'sunset', 'night', 'dawn'][preset]}`);
+  ui.note(t('note.time', { i: preset }));
 });
 
 // --- Where am I / where next -------------------------------------------------
@@ -145,9 +155,9 @@ function place() {
 
 /** Nearest stage start or zone not yet visited this session (hidden ones are for finding). */
 const targets = [
-  ...stages.stages.filter(st => !st.hidden).map(st => ({ id: st.id, name: `${st.name} start`, x: st.start.x, z: st.start.z })),
-  ...map.zones.filter(z => z.id !== 'paddock' && !z.hidden).map(z => ({ id: z.id, name: z.title.toLowerCase(), x: z.pos[0], z: z.pos[1] })),
-  { id: '24h', name: '24H gate', x: loop24.startPoint.x, z: loop24.startPoint.z },
+  ...stages.stages.filter(st => !st.hidden).map(st => ({ id: st.id, name: () => t('nav.start', { name: st.name }), x: st.start.x, z: st.start.z })),
+  ...map.zones.filter(z => z.id !== 'paddock' && !z.hidden).map(z => ({ id: z.id, name: () => zoneName(z), x: z.pos[0], z: z.pos[1] })),
+  { id: '24h', name: () => t('place.24h'), x: loop24.startPoint.x, z: loop24.startPoint.z },
 ];
 bus.on('loop:finish', () => ui.visited.add('24h'));
 function nextTarget() {
@@ -155,7 +165,7 @@ function nextTarget() {
   for (const t of targets) {
     if (ui.visited.has(t.id)) continue;
     const dist = Math.hypot(t.x - vehicle.x, t.z - vehicle.z);
-    if (!best || dist < best.dist) best = { ...t, dist };
+    if (!best || dist < best.dist) best = { ...t, name: t.name(), dist };
   }
   if (!best || best.dist < 8) return null; // already there
   best.bearing = ((Math.atan2(best.x - vehicle.x, -(best.z - vehicle.z)) * 180 / Math.PI) + 360) % 360;
@@ -169,7 +179,7 @@ function navNote(nav, dt) {
   const heading = ((-rig.yaw * 180 / Math.PI) % 360 + 360) % 360;
   const rel = ((nav.bearing - heading) % 360 + 360) % 360;
   const clock = Math.round(rel / 30) % 12 || 12;
-  ui.note(`> ${nav.name} · ${Math.round(nav.dist)}m · ${clock} o'clock`);
+  ui.note(t('note.nav', { name: nav.name, dist: Math.round(nav.dist), clock }));
 }
 
 // --- Map + fast travel -------------------------------------------------------------
@@ -183,12 +193,12 @@ const zonePos = id => map.zones.find(z => z.id === id);
 const STAGE_KEYS = 'abcdefghijklnopqrstuvwxyz';
 const stageNum = st => +(/\d+/.exec(st.name)?.[0] ?? 99);
 const destinations = [
-  { key: '1', label: 'paddock', x: world.spawn.pos[0], z: world.spawn.pos[1], heading: world.spawn.heading },
-  { key: '2', label: 'rally hq', x: zonePos('piazza').pos[0], z: zonePos('piazza').pos[1], heading: 0 },
-  { key: '3', label: 'garage', x: zonePos('garage').pos[0], z: zonePos('garage').pos[1], heading: 0 },
-  { key: '4', label: 'pit wall', x: zonePos('pitwall').pos[0], z: zonePos('pitwall').pos[1], heading: 0 },
-  { key: '5', label: '24H gate', ...gate },
-  { key: '6', label: 'lookout', x: zonePos('lookout').pos[0], z: zonePos('lookout').pos[1], heading: 0 },
+  { key: '1', label: () => t('place.paddock'), x: world.spawn.pos[0], z: world.spawn.pos[1], heading: world.spawn.heading },
+  { key: '2', label: () => t('place.hq'), x: zonePos('piazza').pos[0], z: zonePos('piazza').pos[1], heading: 0 },
+  { key: '3', label: () => t('place.garage'), x: zonePos('garage').pos[0], z: zonePos('garage').pos[1], heading: 0 },
+  { key: '4', label: () => t('place.pitwall'), x: zonePos('pitwall').pos[0], z: zonePos('pitwall').pos[1], heading: 0 },
+  { key: '5', label: () => t('place.24h'), ...gate },
+  { key: '6', label: () => t('place.lookout'), x: zonePos('lookout').pos[0], z: zonePos('lookout').pos[1], heading: 0 },
   ...stages.stages.filter(st => !st.hidden).sort((a, b) => stageNum(a) - stageNum(b)).map((st, i) => ({
     key: STAGE_KEYS[i], group: 'stages', label: `${st.name} ${st.title ?? st.trail.id}`.toLowerCase(),
     x: st.start.x, z: st.start.z, heading: along(st.start),
@@ -201,7 +211,7 @@ const mapUI = createMapUI({
   onTravel: d => {
     ui.close();
     respawn({ pos: [d.x, d.z], heading: d.heading });
-    ui.note(`> travelled to ${d.label}`);
+    ui.note(t('note.travel', { label: typeof d.label === 'function' ? d.label() : d.label }));
   },
   onOpenChange: open => {
     if (open) ui.close();
@@ -222,6 +232,8 @@ function resize() {
 window.addEventListener('resize', resize);
 resize();
 respawn(world.spawn);
+// Return visits: don't pop the welcome panel open on the spawn pad (E still opens it).
+if (!ui.firstVisit) zones.skipAutoOpen();
 
 // --- Loop -----------------------------------------------------------------
 const carFocus = new THREE.Vector3();

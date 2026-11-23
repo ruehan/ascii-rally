@@ -1,4 +1,5 @@
 import { MAP_CLASSES } from './mapGrid.js';
+import { t, i18n } from './i18n.js';
 
 const COLORS = {
   sea: '#3f86ad', low: '#5f7038', mid: '#857a45', high: '#a89a70', cliff: '#8f7f6c',
@@ -8,6 +9,7 @@ const COLORS = {
 };
 const CLASS_COLORS = MAP_CLASSES.map(c => COLORS[c.id]);
 const ARROWS = ['↑', '↗', '→', '↘', '↓', '↙', '←', '↖'];
+const label = d => (typeof d.label === 'function' ? d.label() : d.label);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
 /** Car heading (0 = north, + = left) → north-up arrow glyph. */
@@ -115,7 +117,6 @@ export function createMapUI({ fine, coarse, destinations, onTravel, onOpenChange
   const markers = destinations.map(d => {
     const b = document.createElement('button');
     b.className = 'marker';
-    b.innerHTML = `<b>${esc(d.key ?? '·')}</b> ${esc(d.label)}`;
     b.addEventListener('click', () => travel(d));
     frame.appendChild(b);
     return { d, b };
@@ -128,10 +129,15 @@ export function createMapUI({ fine, coarse, destinations, onTravel, onOpenChange
   side.className = 'side';
   const group = g => destinations.filter(d => (d.group ?? 'places') === g);
   const list = ds => ds.map(d =>
-    `<button data-i="${destinations.indexOf(d)}"><b>${esc(d.key ?? '·')}</b> ${esc(d.label)}</button>`).join('');
-  side.innerHTML = `<h2>$ map --travel</h2><h3>places</h3>${list(group('places'))}<h3>stages</h3>${list(group('stages'))}
-    <p class="foot">click or press its key · [M]/[Esc] close</p>`;
-  side.querySelectorAll('button').forEach(b => b.addEventListener('click', () => travel(destinations[+b.dataset.i])));
+    `<button data-i="${destinations.indexOf(d)}"><b>${esc(d.key ?? '·')}</b> ${esc(label(d))}</button>`).join('');
+  function renderText() {
+    for (const { d, b } of markers) b.innerHTML = `<b>${esc(d.key ?? '·')}</b> ${esc(label(d))}`;
+    side.innerHTML = `<h2>${t('map.title')}</h2><h3>${t('map.places')}</h3>${list(group('places'))}<h3>${t('map.stages')}</h3>${list(group('stages'))}
+      <p class="foot">${t('map.foot')}</p>`;
+    side.querySelectorAll('button').forEach(b => b.addEventListener('click', () => travel(destinations[+b.dataset.i])));
+  }
+  renderText();
+  i18n.onChange(() => { renderText(); if (!overlay.hidden) metrics = layout(); });
 
   // While the map is open, destination keys travel (and don't reach the
   // game's own key bindings, e.g. Q = change car).

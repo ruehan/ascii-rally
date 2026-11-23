@@ -2,6 +2,7 @@ import './ui.css';
 import { panels, projects, owner } from '../content/content.js';
 import { leaderboard, formatTime } from '../game/leaderboard.js';
 import { CARS, CAR_ORDER } from '../vehicle/cars.js';
+import { t, L, i18n, zoneName, paceNote } from './i18n.js';
 
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
@@ -22,10 +23,10 @@ function renderLines(lines) {
     kv = [];
   };
   for (const l of lines) {
-    if (typeof l === 'string') { flush(); html += `<p>${esc(l)}</p>`; }
-    else if (l.h) { flush(); html += `<h3>── ${esc(l.h)} ──</h3>`; }
-    else if (l.k) kv.push([l.k, l.v]);
-    else if (l.link) { flush(); html += `<p><a href="${esc(l.href)}" target="_blank" rel="noopener">${esc(l.link)}</a></p>`; }
+    if (typeof l === 'string' || (l && ('en' in l || 'ko' in l))) { flush(); html += `<p>${esc(L(l))}</p>`; }
+    else if (l.h) { flush(); html += `<h3>── ${esc(L(l.h))} ──</h3>`; }
+    else if (l.k) kv.push([L(l.k), L(l.v)]);
+    else if (l.link) { flush(); html += `<p><a href="${esc(l.href)}" target="_blank" rel="noopener">${esc(L(l.link))}</a></p>`; }
   }
   flush();
   return html;
@@ -35,16 +36,15 @@ function timesLog(stage, car, highlight) {
   const rows = leaderboard.get(stage.id, car).map(e =>
     `<span class="${e.hash === highlight ? 'me' : ''}">${e.hash}  ${formatTime(e.time)}  ${esc(owner.handle)}  ${e.date}</span>`);
   const target = stage.target?.[car];
-  rows.push(target ? `<span>target   ${formatTime(target)}  owner</span>` : '<span>no owner target for this car</span>');
+  rows.push(target ? `<span>${t('log.target')}   ${formatTime(target)}  ${t('log.owner')}</span>` : `<span>${t('log.noTarget')}</span>`);
   return `<div class="log">${rows.join('\n')}</div>`;
 }
 
 /** Project shown for a stage; fun stages (project: null) get a stand-in. */
 function projectOf(stage) {
-  return projects[stage.project] ?? {
-    title: stage.title ?? stage.name, year: '', role: '', stack: '',
-    summary: ['Fun stage — no project here, just the road.'], links: [],
-  };
+  const p = projects[stage.project];
+  if (!p) return { title: stage.title ?? stage.name, year: '', role: '', stack: '', summary: [t('fun.summary')], links: [] };
+  return { ...p, title: L(p.title), role: L(p.role) };
 }
 
 /** Garage: car cards with real-world-ish specs; buttons emit car:select. */
@@ -53,9 +53,9 @@ function carCards(current) {
     const c = CARS[id];
     const kw = c.power, hp = Math.round(kw * 1.341);
     return `<div class="car-card${id === current ? ' on' : ''}">
-      <button data-car="${id}">${id === current ? '● ' : '○ '}${esc(c.name)}</button> <span class="k">${esc(c.klass)}</span>
-      <div class="spec">${kw} kW (${hp} hp) · ${c.mass} kg · 0-100 ${c.zeroTo100}s · ${c.vmax} km/h · ${c.drive === 1 ? 'AWD' : 'RWD'} · downforce ${c.cla ? 'ClA ' + c.cla : 'none'}</div>
-      <div class="spec">tyres: tarmac ${c.tyres.asphalt} · gravel ${c.tyres.gravel} · grass ${c.tyres.grass} — ${esc(c.note)}</div>
+      <button data-car="${id}">${id === current ? '● ' : '○ '}${esc(c.name)}</button> <span class="k">${esc(L(c.klass))}</span>
+      <div class="spec">${kw} kW (${hp} hp) · ${c.mass} kg · 0-100 ${c.zeroTo100}s · ${c.vmax} km/h · ${c.drive === 1 ? 'AWD' : 'RWD'} · ${t('garage.downforce')} ${c.cla ? 'ClA ' + c.cla : t('garage.none')}</div>
+      <div class="spec">${t('garage.tyres')}: ${t('garage.tarmac')} ${c.tyres.asphalt} · ${t('garage.gravel')} ${c.tyres.gravel} · ${t('garage.grass')} ${c.tyres.grass} — ${esc(L(c.note))}</div>
     </div>`;
   }).join('');
 }
@@ -79,7 +79,22 @@ export function createUI({ bus, stages, onPanel, getCar }) {
   let cardTimer = 0;
   const panel = el('ui-panel');
   panel.hidden = true;
-  help.textContent = 'WASD/방향키 운전 · Space 핸드브레이크 · Q 차량 · E 열기 · M 지도 · Esc 닫기 · R 출발점\nV 카메라 · T 시간대 · N 소리 · C 컬러 · G 윤곽선 · +/- 글자 크기';
+
+  // Controls help: shown on the very first visit only (until the driver
+  // has been on the move for a while); H brings it back any time.
+  const SEEN = 'stage~/seen';
+  const firstVisit = (() => { try { return !localStorage.getItem(SEEN); } catch { return true; } })();
+  try { localStorage.setItem(SEEN, '1'); } catch { /* not persisted */ }
+  let helpDrive = 0;
+  help.hidden = !firstVisit;
+  const renderHelp = () => { help.textContent = t('help'); };
+  renderHelp();
+  let openPanel = null; // re-render the open panel when the language changes
+  i18n.onChange(() => {
+    renderHelp();
+    if (!panel.hidden && openPanel) openPanel();
+    note(t('note.lang'));
+  });
 
   let noteLines = [];
   const slicksOnDirt = v => Math.abs(v.speed) < 8 && (CARS[getCar()].tyres[v.surface] ?? 1) < 0.55;
@@ -95,7 +110,7 @@ export function createUI({ bus, stages, onPanel, getCar }) {
 
   // --- Panel --------------------------------------------------------------------------
   function open(title, html) {
-    panel.innerHTML = `<h2>${esc(title)}</h2>${html}<div class="foot">[Esc] close</div>`;
+    panel.innerHTML = `<h2>${esc(L(title))}</h2>${html}<div class="foot">${t('close')}</div>`;
     panel.hidden = false;
     panel.scrollTop = 0;
     onPanel(true);
@@ -108,6 +123,7 @@ export function createUI({ bus, stages, onPanel, getCar }) {
   }
 
   function openZone(zone) {
+    openPanel = () => openZone(zone);
     visited.add(zone.id);
     const car = getCar();
     if (zone.content === 'hq') {
@@ -119,14 +135,14 @@ export function createUI({ bus, stages, onPanel, getCar }) {
       const html = list.map(st => {
         return `<h3>── ${esc(st.name)} · ${esc(projectOf(st).title)} ──</h3>${timesLog(st, car)}`;
       }).join('');
-      open('$ git log --stages', `<p>Stage times on this browser for <b>${esc(CARS[car].name)}</b>. Beat the owner's targets.</p>${html}`);
+      open(t('hq.title'), `<p>${t('hq.intro', { car: esc(CARS[car].name) })}</p>${html}`);
       return;
     }
     const data = panels[zone.content];
     if (!data) return;
     if (zone.content === 'skills') {
       // The garage also hands out cars.
-      open(data.title, `<h3>── CARS ── (Q cycles anywhere)</h3>${carCards(car)}${renderLines(data.lines)}`);
+      open(data.title, `<h3>── ${t('garage.cars')} ── ${t('garage.cycle')}</h3>${carCards(car)}${renderLines(data.lines)}`);
       panel.querySelectorAll('[data-car]').forEach(b => b.addEventListener('click', () => {
         bus.emit('car:select', { id: b.dataset.car });
         openZone(zone);
@@ -140,59 +156,64 @@ export function createUI({ bus, stages, onPanel, getCar }) {
     visited.add(stage.id);
     const car = getCar();
     const rec = leaderboard.add(stage.id, car, time);
+    openPanel = () => renderResult({ stage, time, penalty, rec });
+    renderResult({ stage, time, penalty, rec });
+  }
+  function renderResult({ stage, time, penalty, rec }) {
+    const car = getCar();
     const target = stage.target?.[car];
     const delta = target ? time - target : null;
     const p = projectOf(stage);
     const verdict = delta === null ? `<span>${esc(CARS[car].name)}</span>`
-      : delta <= 0 ? `<span style="color:var(--ui-accent)">▼ ${delta.toFixed(1)} — beat the owner (${esc(CARS[car].name)})</span>`
-      : `<span style="color:var(--ui-bad)">▲ +${delta.toFixed(1)} vs owner (${esc(CARS[car].name)})</span>`;
-    const best = rec.rank === 1 ? ' · NEW BEST' : '';
+      : delta <= 0 ? `<span style="color:var(--ui-accent)">${t('result.beat', { d: delta.toFixed(1), car: esc(CARS[car].name) })}</span>`
+      : `<span style="color:var(--ui-bad)">${t('result.behind', { d: delta.toFixed(1), car: esc(CARS[car].name) })}</span>`;
+    const best = rec.rank === 1 ? t('result.best') : '';
     open(`${stage.name} · ${p.title}`, `
       <p class="big">${formatTime(time)}</p>
-      <p>${verdict}${best}${penalty ? ` · penalty +${penalty.toFixed(1)}` : ''}</p>
+      <p>${verdict}${best}${penalty ? t('result.penalty', { p: penalty.toFixed(1) }) : ''}</p>
       ${renderLines([
-        { h: 'PROJECT' },
-        { k: 'TITLE', v: p.title }, { k: 'YEAR', v: p.year }, { k: 'ROLE', v: p.role }, { k: 'STACK', v: p.stack },
+        { h: t('result.project') },
+        { k: t('result.k.title'), v: p.title }, { k: t('result.k.year'), v: p.year }, { k: t('result.k.role'), v: p.role }, { k: t('result.k.stack'), v: p.stack },
         ...(p.summary ?? []),
         ...(p.links ?? []),
-        { h: 'TIMES' },
+        { h: t('result.times') },
       ])}
       ${timesLog(stage, car, rec.entry.hash)}`);
   }
 
   /** Transient card (doesn't block driving). */
   function showCard(title, lines, seconds = 5) {
-    card.innerHTML = `<h2>${esc(title)}</h2>${renderLines(lines)}`;
+    card.innerHTML = `<h2>${esc(L(title))}</h2>${renderLines(lines)}`;
     card.hidden = false;
     cardTimer = seconds;
   }
   card.hidden = true;
 
   // --- Bus ---------------------------------------------------------------------------
-  bus.on('loop:start', () => { close(); note('> 24H · green flag · 15:00'); });
+  bus.on('loop:start', () => { close(); note(t('loop.start')); });
   bus.on('loop:milestone', ({ milestone: m }) => {
-    note(`> ${m.year} · ${m.title}`);
-    showCard(`${m.year} · ${m.title}`, [m.text]);
+    note(`> ${m.year} · ${L(m.title)}`);
+    showCard(`${m.year} · ${L(m.title)}`, [m.text]);
   });
-  bus.on('loop:finish', () => { note('> 24H · chequered flag'); showCard('24H · finished', ['Round the clock — and back to now.']); });
-  bus.on('loop:pause', () => note('> 24H · session paused (off route)'));
+  bus.on('loop:finish', () => { note(t('loop.finish')); showCard(t('loop.card'), [t('loop.cardText')]); });
+  bus.on('loop:pause', () => note(t('loop.pause')));
   bus.on('zone:open', ({ zone }) => openZone(zone));
-  bus.on('stage:armed', ({ stage }) => { close(); noteLines = []; note(`> ${stage.name} armed · ${projectOf(stage).title}`); });
+  bus.on('stage:armed', ({ stage }) => { close(); noteLines = []; note(t('note.armed', { name: stage.name, title: projectOf(stage).title })); });
   bus.on('stage:count', ({ n }) => { count.textContent = n; count.classList.remove('go'); });
   bus.on('stage:go', ({ jumped }) => {
     count.textContent = 'GO'; count.classList.add('go'); countTimer = 0.8;
-    if (jumped) note('! jump start +5.0');
+    if (jumped) note(t('note.jump'));
   });
-  bus.on('stage:note', ({ text, dist }) => note(`> ${String(dist).padStart(3)}  ${text}`));
+  bus.on('stage:note', ({ text, dist }) => note(`> ${String(dist).padStart(3)}  ${paceNote(text)}`));
   bus.on('stage:split', ({ stage, index, time, missed }) => {
     const target = stage.target?.[getCar()];
     lastSplit = target ? time - target * (stage.splits[index] - stage.from) / stage.length : null;
     const delta = lastSplit === null ? '' : `  ${lastSplit <= 0 ? '▼' : '▲'}${lastSplit.toFixed(1)}`;
-    note(`> split ${index + 1}  ${formatTime(time)}${delta}${missed ? '  missed +10' : ''}`);
+    note(t('note.split', { i: index + 1, time: formatTime(time), delta, missed }));
   });
-  bus.on('car:changed', ({ id }) => note(`> car: ${CARS[id].name} · ${CARS[id].klass}`));
-  bus.on('stage:finish', e => { lastSplit = null; note(`> finish ${formatTime(e.time)}`); openResult(e); });
-  bus.on('stage:abort', ({ stage, reason }) => { lastSplit = null; count.textContent = ''; note(`> ${stage.name} aborted · ${reason}`); });
+  bus.on('car:changed', ({ id }) => note(t('note.car', { name: CARS[id].name, klass: L(CARS[id].klass) })));
+  bus.on('stage:finish', e => { lastSplit = null; note(t('note.finish', { time: formatTime(e.time) })); openResult(e); });
+  bus.on('stage:abort', ({ stage, reason }) => { lastSplit = null; count.textContent = ''; note(t('note.abort', { name: stage.name, reason: t(`reason.${reason}`) })); });
 
   // --- Per-frame ------------------------------------------------------------------------
   /**
@@ -212,7 +233,8 @@ export function createUI({ bus, stages, onPanel, getCar }) {
       const clock = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
       top.innerHTML = `<span class="prompt">24H</span>${sep}${clock}${sep}${kmh} km/h${sep}<span class="opt">${alt}</span><span class="right">${Math.round(loop.progress * 100)}%</span>`;
     } else {
-      top.innerHTML = `<span class="prompt">${esc(owner.handle)}@stage:${esc(place)} $</span><span class="right opt">${esc(CARS[getCar()].name)} · ${kmh} km/h · ${alt} · ${esc(vehicle.surface ?? '')}</span>`;
+      const surf = vehicle.surface ? t(`surf.${vehicle.surface}`) : '';
+      top.innerHTML = `<span class="prompt">${esc(owner.handle)}@stage:${esc(place)} $</span><span class="right opt">${esc(CARS[getCar()].name)} · ${kmh} km/h · ${alt} · ${esc(surf)}</span>`;
     }
     speed.textContent = `${kmh} km/h`;
 
@@ -228,15 +250,24 @@ export function createUI({ bus, stages, onPanel, getCar }) {
     }
 
     // Prompt.
-    if (stages.state === 'near') prompt.innerHTML = `<b>${esc(stages.active.name)}</b> stop in the box to start`;
+    if (stages.state === 'near') prompt.innerHTML = t('prompt.box', { name: esc(stages.active.name) });
     else if (stages.state === 'running' || stages.state === 'countdown') prompt.innerHTML = '';
-    else if (zone && panel.hidden) prompt.innerHTML = `<b>[E]</b> open ${esc(zone.title.toLowerCase())}`;
-    else if (slicksOnDirt(vehicle)) prompt.innerHTML = `slicks on ${esc(vehicle.surface)} — <b>[Q]</b> try RALLY or TRAIL`;
+    else if (zone && panel.hidden) prompt.innerHTML = t('prompt.open', { name: esc(zoneName(zone)) });
+    else if (slicksOnDirt(vehicle)) prompt.innerHTML = t('prompt.slicks', { surface: esc(t(`surf.${vehicle.surface}`)) });
     else prompt.innerHTML = '';
 
+    // First visit: the help fades once the driver has been moving ~25 s.
+    if (!help.hidden && firstVisit && helpDrive < 25) {
+      if (Math.abs(vehicle.speed) > 2) helpDrive += dt;
+      if (helpDrive >= 25) help.hidden = true;
+    }
     if (countTimer > 0) { countTimer -= dt; if (countTimer <= 0) count.textContent = ''; }
     if (cardTimer > 0) { cardTimer -= dt; if (cardTimer <= 0) card.hidden = true; }
   }
 
-  return { update, note, close, openZone, visited, get panelOpen() { return !panel.hidden; } };
+  return {
+    update, note, close, openZone, visited, firstVisit,
+    get panelOpen() { return !panel.hidden; },
+    toggleHelp() { help.hidden = !help.hidden; helpDrive = 25; },
+  };
 }
