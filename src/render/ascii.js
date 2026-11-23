@@ -33,10 +33,10 @@ function sortByCoverage(chars) {
  * per glyph (= on-screen cell size) and sampled with nearest filtering, so
  * small cells stay crisp instead of blurring thin strokes into grey.
  */
-function createGlyphAtlas(glyphs, px, pw = px) {
+function createGlyphAtlas(glyphs, px) {
   const rows = Math.ceil(glyphs.length / ATLAS_COLS);
   const canvas = document.createElement('canvas');
-  canvas.width = pw * ATLAS_COLS;
+  canvas.width = px * ATLAS_COLS;
   canvas.height = px * rows;
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = '#000';
@@ -46,7 +46,7 @@ function createGlyphAtlas(glyphs, px, pw = px) {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   glyphs.forEach((ch, i) => {
-    const x = (i % ATLAS_COLS) * pw + pw / 2;
+    const x = (i % ATLAS_COLS) * px + px / 2;
     const y = Math.floor(i / ATLAS_COLS) * px + px / 2 + px * 0.04;
     ctx.fillText(ch, x, y);
   });
@@ -112,7 +112,7 @@ const fragmentShader = /* glsl */ `
   uniform sampler2D tInfo;
   uniform sampler2D tGlyphs;
   uniform vec2 resolution;     // drawing-buffer pixels
-  uniform vec2 cellSize;       // drawing-buffer pixels per cell (w, h)
+  uniform float cellSize;      // drawing-buffer pixels per cell
   uniform float atlasCols;
   uniform float atlasRows;
   uniform float rampStart[MAX_SETS];
@@ -139,9 +139,6 @@ const fragmentShader = /* glsl */ `
   uniform float fogNear;
   uniform float fogFar;
   uniform vec2 cells;          // cell grid size (cols, rows)
-  uniform float codeMode;      // 1 = "code page" style: glyphs come from source text
-  uniform sampler2D tText;     // code page: char codes (R), textSize.x cols × textSize.y lines
-  uniform vec2 textSize;
 
   vec2 cellUv(vec2 cell) { return (cell + 0.5) / cells; }
 
@@ -236,21 +233,10 @@ const fragmentShader = /* glsl */ `
     if (edge > 0.0) tint = mix(tint, vec3(1.0), 0.35) * edgeGain; // edges a touch brighter
     else if (edge < 0.0) tint = mix(tint, background, lineDim);
 
-    // Code page: the glyph is whatever character of the source text sits at
-    // this cell (fixed to the screen, so it reads as a page of code); the
-    // world shows only through colour and brightness. Outlines are skipped.
-    if (codeMode > 0.5) {
-      float row = cells.y - 1.0 - cell.y;
-      vec2 tc = vec2(mod(cell.x, textSize.x), mod(row, textSize.y));
-      idx = floor(texture2D(tText, (tc + 0.5) / textSize).r * 255.0 + 0.5) - 32.0;
-      tint = baseTint * (0.1 + 1.35 * pow(lum, 1.35)); // steeper curve: shapes read in the text
-    }
-
     // Lit cells get a faint wash of their colour behind the glyph; empty
     // (dark) cells stay pure background so the terminal look survives.
     #ifdef OUT_BG
-      // (Code page: a much fainter wash, so the text itself draws the world.)
-      gl_FragColor = vec4(background + baseTint * cellFill * setFill[set] * clamp(lum * 1.3, 0.0, 1.0) * (codeMode > 0.5 ? 0.35 : 1.0), 1.0);
+      gl_FragColor = vec4(background + baseTint * cellFill * setFill[set] * clamp(lum * 1.3, 0.0, 1.0), 1.0);
     #else
       gl_FragColor = vec4(tint, idx / 255.0);
     #endif
@@ -263,7 +249,7 @@ const finalShader = /* glsl */ `
   uniform sampler2D tCellBg;   // rgb = cell background
   uniform sampler2D tGlyphs;
   uniform vec2 cells;
-  uniform vec2 cellSize;
+  uniform float cellSize;
   uniform float atlasCols;
   uniform float atlasRows;
   void main() {
@@ -329,9 +315,7 @@ export class AsciiRenderer {
     // The cell pass stores the glyph index in one 8-bit channel.
     if (glyphs.length > 255) throw new Error(`glyph atlas has ${glyphs.length} glyphs; max 255`);
     this._glyphs = glyphs;
-    this._codeGlyphs = Array.from({ length: 95 }, (_, i) => String.fromCharCode(32 + i)); // printable ASCII
-    this._style = 'glyphs';
-    this._atlasKey = '';
+    this._atlasPx = 0;
     const atlas = createGlyphAtlas(glyphs, GLYPH_PX);
 
     this.material = new THREE.ShaderMaterial({
@@ -343,7 +327,7 @@ export class AsciiRenderer {
         tInfo: { value: this.infoTarget.texture },
         tGlyphs: { value: atlas.texture },
         resolution: { value: new THREE.Vector2() },
-        cellSize: { value: new THREE.Vector2(cellSize, cellSize) },
+        cellSize: { value: cellSize },
         atlasCols: { value: ATLAS_COLS },
         atlasRows: { value: atlas.rows },
         rampStart: { value: rampStart },
@@ -370,9 +354,6 @@ export class AsciiRenderer {
         fogNear: { value: 1e4 },
         fogFar: { value: 1e5 },
         cells: { value: new THREE.Vector2(1, 1) },
-        codeMode: { value: 0 },
-        tText: { value: null },
-        textSize: { value: new THREE.Vector2(1, 1) },
       },
       depthTest: false,
       depthWrite: false,
@@ -427,32 +408,29 @@ export class AsciiRenderer {
     const dpr = this.renderer.getPixelRatio();
     const bw = Math.floor(width * dpr);
     const bh = Math.floor(height * dpr);
-    // Glyph cells are square, except the code page, which uses real
-    // monospace proportions so text reads like an editor.
-    const ch = Math.max(4, Math.round(this.cellSize * dpr));
-    const cw = this._style === 'code' ? Math.max(3, Math.round(ch * 0.6)) : ch;
+    const cell = this.cellSize * dpr;
     this.material.uniforms.resolution.value.set(bw, bh);
-    this.material.uniforms.cellSize.value.set(cw, ch);
-    this._ensureAtlas(ch, cw);
-    const cols = Math.ceil(bw / cw), rows = Math.ceil(bh / ch);
-    const tw = cols * 2, th = rows * 2;
+    this.material.uniforms.cellSize.value = cell;
+    this._ensureAtlas(Math.max(4, Math.round(cell)));
+    const tw = Math.ceil(bw / cell) * 2;
+    const th = Math.ceil(bh / cell) * 2;
     this.target.setSize(tw, th);
     this.infoTarget.setSize(tw, th);
+    const cols = Math.ceil(bw / cell), rows = Math.ceil(bh / cell);
     this.material.uniforms.cells.value.set(cols, rows);
     this.cellTarget.setSize(cols, rows);
     this.cellBgTarget.setSize(cols, rows);
   }
 
   /** Re-renders the glyph atlas when the on-screen cell size changes. */
-  _ensureAtlas(px, pw = px) {
-    const key = `${px}x${pw}:${this._style}`;
-    if (key === this._atlasKey) return;
+  _ensureAtlas(px) {
+    if (px === this._atlasPx) return;
     const u = this.material.uniforms;
     u.tGlyphs.value.dispose();
-    const atlas = createGlyphAtlas(this._style === 'code' ? this._codeGlyphs : this._glyphs, px, pw);
+    const atlas = createGlyphAtlas(this._glyphs, px);
     u.tGlyphs.value = atlas.texture;
     u.atlasRows.value = atlas.rows;
-    this._atlasKey = key;
+    this._atlasPx = px;
   }
 
   setCellSize(px) {
@@ -469,36 +447,6 @@ export class AsciiRenderer {
     u.pastel.value = look.pastel;
     u.edgeGain.value = look.edgeGain;
     u.background.value.copy(look.fog).multiplyScalar(0.8);
-  }
-
-  /**
-   * Render style: 'glyphs' (density-matched charsets) or 'code' (a page of
-   * source text; `lines` = array of strings, needed the first time).
-   */
-  setStyle(style, lines = null) {
-    const u = this.material.uniforms;
-    if (style === 'code' && lines && !this._textTex) {
-      const W = 256, H = Math.min(4096, lines.length);
-      const data = new Uint8Array(W * H).fill(32);
-      for (let r = 0; r < H; r++) {
-        const line = lines[r];
-        for (let c = 0; c < Math.min(W, line.length); c++) {
-          const code = line.charCodeAt(c);
-          data[r * W + c] = code >= 32 && code < 127 ? code : 126; // non-ASCII → '~'
-        }
-      }
-      // Row 0 at the top of the texture = first line of the page.
-      const tex = new THREE.DataTexture(data, W, H, THREE.RedFormat, THREE.UnsignedByteType);
-      tex.minFilter = tex.magFilter = THREE.NearestFilter;
-      tex.needsUpdate = true;
-      this._textTex = tex;
-      u.tText.value = tex;
-      u.textSize.value.set(W, H);
-    }
-    const code = style === 'code' && !!this._textTex;
-    this._style = code ? 'code' : 'glyphs';
-    u.codeMode.value = code ? 1 : 0;
-    this.setCellSize(this.cellSize); // cell shape + atlas follow the style
   }
 
   setColor(on) { this.material.uniforms.colorMode.value = on ? 1 : 0; }
