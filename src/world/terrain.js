@@ -58,22 +58,6 @@ const smoothstep = (a, b, x) => {
 };
 const bump = (d, r) => (d >= r ? 0 : 0.5 + 0.5 * Math.cos((Math.PI * d) / r));
 
-/** Signed distance to a west→east polyline: positive on the north (-z) side. */
-function signedDistance(px, pz, path) {
-  let best = Infinity, sign = 1;
-  for (let i = 0; i < path.length - 1; i++) {
-    const [ax, az] = path[i];
-    const [bx, bz] = path[i + 1];
-    const [d] = segmentDistance(px, pz, ax, az, bx, bz);
-    if (d < best) {
-      best = d;
-      const cross = (bx - ax) * (pz - az) - (bz - az) * (px - ax);
-      sign = cross < 0 ? 1 : -1;
-    }
-  }
-  return best * sign;
-}
-
 // --- Terrain ---------------------------------------------------------------
 
 export function createTerrain({ size = 400, cell = 2, seed = 1, base = {}, features = [] } = {}) {
@@ -107,25 +91,61 @@ export function createTerrain({ size = 400, cell = 2, seed = 1, base = {}, featu
     forEachNear(path, cum, f.width, grid, (k, d) => { heights[k] += f.height * bump(d, f.width); });
   }
 
-  // Coast: cliff profile blended into inland terrain.
+  // Coast: cliff profile blended into inland terrain. The coastline runs
+  // west→east (monotone in x), so the land/sea side of a point is a cheap
+  // comparison with the coastline's z at that x; exact signed distance is
+  // only computed inside the blend band, against nearby segments.
   for (const f of byType('coast')) {
     const path = smoothPath(f.points, cell * 2);
     const { cliffTop = 16, cliffWidth = 7, rise = 0.06, seaDepth = 6, blend = [50, 100], land = 'north' } = f;
     const landSign = land === 'south' ? -1 : 1;
-    // Only rows within the coastline's z range ± blend can be affected.
-    const zs = path.map(p => p[1]);
-    const iz0 = Math.max(0, Math.floor((Math.min(...zs) - blend[1] - origin) / cell));
-    const iz1 = Math.min(n - 1, Math.ceil((Math.max(...zs) + blend[1] - origin) / cell));
-    for (let iz = iz0; iz <= iz1; iz++) {
-      for (let ix = 0; ix < n; ix++) {
-        const x = origin + ix * cell, z = origin + iz * cell;
-        const d = signedDistance(x, z, path) * landSign;
-        if (d > blend[1]) continue;
-        let profile;
-        if (d < 0) profile = -seaDepth * smoothstep(0, -12, d);
-        else if (d < cliffWidth) profile = cliffTop * smoothstep(0, cliffWidth, d);
-        else profile = cliffTop + (d - cliffWidth) * rise;
+    const band = blend[1];
+    const coastZ = x => {
+      if (x <= path[0][0]) return path[0][1];
+      for (let i = 1; i < path.length; i++) {
+        if (path[i][0] >= x) {
+          const [ax, az] = path[i - 1], [bx, bz] = path[i];
+          return az + (bz - az) * ((x - ax) / ((bx - ax) || 1));
+        }
+      }
+      return path[path.length - 1][1];
+    };
+    const profileAt = d => d < 0 ? -seaDepth * smoothstep(0, -12, d)
+      : d < cliffWidth ? cliffTop * smoothstep(0, cliffWidth, d)
+      : cliffTop + (d - cliffWidth) * rise;
+    for (let ix = 0; ix < n; ix++) {
+      const x = origin + ix * cell;
+      const zc = coastZ(x);
+      // Segments that can be within `band` of this column, and their z range:
+      // rows farther than `band` beyond that range can't be within the band.
+      const local = [];
+      let zMin = Infinity, zMax = -Infinity;
+      for (let i = 0; i < path.length - 1; i++) {
+        if (Math.max(path[i][0], path[i + 1][0]) >= x - band && Math.min(path[i][0], path[i + 1][0]) <= x + band) {
+          local.push(path[i], path[i + 1]);
+          zMin = Math.min(zMin, path[i][1], path[i + 1][1]);
+          zMax = Math.max(zMax, path[i][1], path[i + 1][1]);
+        }
+      }
+      for (let iz = 0; iz < n; iz++) {
+        const z = origin + iz * cell;
         const k = iz * n + ix;
+        // Positive = land side (north = smaller z by default).
+        const side = (zc - z) * landSign;
+        let d;
+        if (z < zMin - band || z > zMax + band) {
+          if (side > 0) continue;          // deep inland: untouched
+          heights[k] = -seaDepth;          // open sea
+          continue;
+        }
+        let best = Infinity;
+        for (let i = 0; i < local.length; i += 2) {
+          const [dd] = segmentDistance(x, z, local[i][0], local[i][1], local[i + 1][0], local[i + 1][1]);
+          if (dd < best) best = dd;
+        }
+        d = side >= 0 ? best : -best;
+        if (d > band) continue;
+        const profile = profileAt(d);
         const w = smoothstep(blend[0], blend[1], d);
         heights[k] = profile + (heights[k] - profile) * w;
       }
