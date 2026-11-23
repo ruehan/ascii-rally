@@ -37,15 +37,16 @@ function timesLog(stage, highlight) {
   return `<div class="log">${rows.join('\n')}</div>`;
 }
 
-const COMPASS = { 0: 'N', 45: 'NE', 90: 'E', 135: 'SE', 180: 'S', 225: 'SW', 270: 'W', 315: 'NW' };
+const COMPASS_8 = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+const ARROWS = ['↑', '↗', '→', '↘', '↓', '↙', '←', '↖']; // up = ahead on screen
 
 /**
- * DOM overlay: telemetry bar, heading tape, pace-note log, prompt,
+ * DOM overlay: telemetry bar, navigation arrow, pace-note log, prompt,
  * countdown and the info panel. Listens to the bus; never touches physics.
  */
 export function createUI({ bus, stages, onPanel }) {
   const top = el('ui-top');
-  const tape = el('ui-tape');
+  const navEl = el('ui-nav');
   const notes = el('ui-notes');
   const prompt = el('ui-prompt');
   const count = el('ui-count');
@@ -53,7 +54,7 @@ export function createUI({ bus, stages, onPanel }) {
   const help = el('ui-help');
   const panel = el('ui-panel');
   panel.hidden = true;
-  help.textContent = 'WASD/방향키 운전 · E 열기 · Esc 닫기 · R 출발점\nC 컬러 · G 윤곽선 · +/- 글자 크기';
+  help.textContent = 'WASD/방향키 운전 · E 열기 · Esc 닫기 · R 출발점\nV 카메라 · C 컬러 · G 윤곽선 · +/- 글자 크기';
 
   let noteLines = [];
   let lastSplit = null;
@@ -134,9 +135,9 @@ export function createUI({ bus, stages, onPanel }) {
 
   // --- Per-frame ------------------------------------------------------------------------
   /**
-   * state: { vehicle, place, zone, nearStage, nav: { name, dist, bearing } | null, dt }
+   * state: { vehicle, place, zone, nav: { name, dist, bearing } | null, viewYaw, dt }
    */
-  function update({ vehicle, place, zone, nav, dt }) {
+  function update({ vehicle, place, zone, nav, viewYaw, dt }) {
     const kmh = String(Math.round(Math.abs(vehicle.speed) * 3.6)).padStart(3, '0');
     const alt = `alt ${String(Math.round(vehicle.y)).padStart(2)}m`;
     const sep = '<span class="sep">│</span>';
@@ -150,29 +151,16 @@ export function createUI({ bus, stages, onPanel }) {
     }
     speed.textContent = `${kmh} km/h`;
 
-    // Heading tape: 3° per character, ±60°.
-    const heading = ((-vehicle.heading * 180 / Math.PI) % 360 + 360) % 360;
-    let line = '';
-    let tgtCol = null;
-    const rel = nav ? (((nav.bearing - heading) % 360) + 540) % 360 - 180 : null;
-    for (let i = -20; i <= 20; i++) {
-      const deg = Math.round((heading + i * 3) / 3) * 3;
-      const d = ((deg % 360) + 360) % 360;
-      const label = Object.entries(COMPASS).find(([k]) => Math.abs(((+k - d + 540) % 360) - 180) < 1.5);
-      // Cardinals as letters, intercardinals as '+', centre = where the car points.
-      const mark = label ? (label[1].length === 1 ? label[1] : '+') : null;
-      if (i === 0) line += `<span class="mark">${mark ?? '▼'}</span>`;
-      else if (rel !== null && Math.round(rel / 3) === i) { line += '<span class="tgt">◆</span>'; tgtCol = i; }
-      else if (mark) line += mark;
-      else line += d % 15 === 0 ? '|' : '·';
+    // Navigation: arrow toward the next target, relative to where the camera looks.
+    const view = ((-viewYaw * 180 / Math.PI) % 360 + 360) % 360;
+    const facing = COMPASS_8[Math.round((((-vehicle.heading * 180 / Math.PI) % 360 + 360) % 360) / 45) % 8];
+    if (nav && stages.state === 'idle') {
+      const rel = ((nav.bearing - view) % 360 + 360) % 360;
+      const arrow = ARROWS[Math.round(rel / 45) % 8];
+      navEl.innerHTML = `<span class="arrow">${arrow}</span><span class="name">${esc(nav.name)}</span><span class="dist">${Math.round(nav.dist)} m</span><span class="facing">${facing}</span>`;
+    } else {
+      navEl.innerHTML = `<span class="facing">${facing}</span>`;
     }
-    let tgt = '';
-    if (nav) {
-      const arrow = tgtCol === null ? (rel < 0 ? '◀ ' : '') : '';
-      const arrowR = tgtCol === null && rel >= 0 ? ' ▶' : '';
-      tgt = `  <span class="tgt">${arrow}[${esc(nav.name)} ${Math.round(nav.dist)}m]${arrowR}</span>`;
-    }
-    tape.innerHTML = line + tgt;
 
     // Prompt.
     if (stages.state === 'near') prompt.innerHTML = `<b>${esc(stages.active.name)}</b> stop in the box to start`;

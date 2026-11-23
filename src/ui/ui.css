@@ -23,10 +23,17 @@
 .ui-top .bad { color: var(--ui-bad); }
 .ui-top .right { margin-left: auto; color: var(--ui-dim); }
 
-/* Heading tape */
-.ui-tape { top: 36px; left: 50%; transform: translateX(-50%); color: var(--ui-dim); text-shadow: 0 0 4px #000; }
-.ui-tape .mark { color: var(--ui-warn); }
-.ui-tape .tgt { color: var(--ui-text); }
+/* Navigation: big arrow to the next target */
+.ui-nav {
+  top: 44px; left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 12px;
+  background: var(--ui-bg); border: 1px solid var(--ui-line); padding: 4px 14px;
+  font-size: 16px;
+}
+.ui-nav .arrow { font-size: 30px; line-height: 1; color: var(--ui-warn); }
+.ui-nav .name { color: var(--ui-text); }
+.ui-nav .dist { color: var(--ui-accent); }
+.ui-nav .facing { color: var(--ui-dim); font-size: 12px; border-left: 1px solid var(--ui-line); padding-left: 10px; }
 
 /* Pace notes log */
 .ui-notes { left: 14px; bottom: 14px; background: var(--ui-bg); border: 1px solid var(--ui-line); padding: 8px 12px; min-width: 300px; }

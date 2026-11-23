@@ -1,54 +1,82 @@
 import * as THREE from 'three';
 
-const OFFSET = new THREE.Vector3(0, 16, 16); // fixed view direction (north-up)
-
 /**
- * Fixed-angle follow camera for hilly terrain.
- * - follows the GROUND height under the car (smoothed), so jumps don't jolt the view
- * - looks a few metres ahead along the direction of travel
- * - lifts when terrain between camera and car would block the view
+ * Follow camera for hilly terrain, two modes (toggle with `toggleMode()`):
+ *
+ *   chase — behind the car, turning with it, so "ahead" is always up on screen
+ *   top   — fixed north-up view from above (the original map-like view)
+ *
+ * Both follow the GROUND height under the car (smoothed) so jumps don't jolt
+ * the view, look a little ahead, and lift when terrain would block the car.
  */
+const MODES = {
+  chase: { dist: 13, height: 8.5, ahead: 7, yawRate: 3.5 },
+  top: { dist: 16, height: 16, ahead: 6, yawRate: 0 },
+};
+
+const wrap = a => Math.atan2(Math.sin(a), Math.cos(a));
+
 export function createCameraRig(camera, terrain) {
   const target = new THREE.Vector3();
   const goal = new THREE.Vector3();
-  const look = new THREE.Vector3();
+  let mode = 'chase';
+  let yaw = 0;            // camera yaw, car-heading convention (0 = looking north)
   let groundY = null;
   let lift = 0;
 
   function update(dt, car, vehicle) {
+    const m = MODES[mode];
     const p = car.position;
     const gy = terrain.heightAt(p.x, p.z);
     groundY = groundY === null ? gy : groundY + (gy - groundY) * (1 - Math.exp(-dt / 0.3));
 
-    // Look-ahead along velocity (helps most when driving south/toward camera).
-    const ahead = Math.min(6, Math.abs(vehicle.speed) * 0.5) * Math.sign(vehicle.speed);
-    look.set(-Math.sin(vehicle.heading) * ahead, 0, -Math.cos(vehicle.heading) * ahead);
-    target.x += (p.x + look.x - target.x) * (1 - Math.exp(-dt * 4));
-    target.z += (p.z + look.z - target.z) * (1 - Math.exp(-dt * 4));
+    // Yaw: chase swings round behind the car with a little lag; top stays north.
+    const want = mode === 'chase' ? vehicle.heading : 0;
+    yaw += wrap(want - yaw) * (mode === 'chase' ? 1 - Math.exp(-dt * m.yawRate) : 1);
+
+    // Look-ahead along the car's direction of travel.
+    const ahead = Math.min(m.ahead, Math.abs(vehicle.speed) * 0.5) * Math.sign(vehicle.speed || 1);
+    const ax = p.x - Math.sin(vehicle.heading) * ahead;
+    const az = p.z - Math.cos(vehicle.heading) * ahead;
+    const k = 1 - Math.exp(-dt * 4);
+    target.x += (ax - target.x) * k;
+    target.z += (az - target.z) * k;
     target.y = groundY;
+
+    // Camera sits behind the view direction.
+    const bx = Math.sin(yaw) * m.dist, bz = Math.cos(yaw) * m.dist;
 
     // Occlusion: sample terrain along the car→camera line; lift if it pokes above.
     let need = 0;
     for (let i = 1; i <= 6; i++) {
       const t = i / 7;
-      const x = p.x + OFFSET.x * t, z = p.z + OFFSET.z * t;
-      const lineY = groundY + 1 + OFFSET.y * t;
-      need = Math.max(need, terrain.heightAt(x, z) + 1 - lineY);
+      const lineY = groundY + 1 + m.height * t;
+      need = Math.max(need, terrain.heightAt(p.x + bx * t, p.z + bz * t) + 1 - lineY);
     }
     lift += (need - lift) * (1 - Math.exp(-dt * (need > lift ? 6 : 1.5)));
 
-    goal.set(target.x + OFFSET.x, target.y + OFFSET.y + lift, target.z + OFFSET.z - lift * 0.5);
+    goal.set(target.x + bx * (1 - lift * 0.03), target.y + m.height + lift, target.z + bz * (1 - lift * 0.03));
     camera.position.lerp(goal, 1 - Math.exp(-dt * 5));
-    camera.lookAt(target.x, target.y + 0.5, target.z);
+    camera.lookAt(target.x, target.y + 0.8, target.z);
   }
 
-  function snap(car) {
+  function snap(car, vehicle) {
+    const m = MODES[mode];
+    yaw = mode === 'chase' ? vehicle.heading : 0;
     target.copy(car.position);
     groundY = terrain.heightAt(car.position.x, car.position.z);
     target.y = groundY;
-    camera.position.copy(target).add(OFFSET);
+    camera.position.set(target.x + Math.sin(yaw) * m.dist, target.y + m.height, target.z + Math.cos(yaw) * m.dist);
     camera.lookAt(target);
   }
 
-  return { update, snap, target };
+  return {
+    update,
+    snap,
+    target,
+    toggleMode() { mode = mode === 'chase' ? 'top' : 'chase'; return mode; },
+    get mode() { return mode; },
+    /** Direction the camera looks (car-heading convention), for the UI. */
+    get yaw() { return yaw; },
+  };
 }

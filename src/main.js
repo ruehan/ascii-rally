@@ -57,7 +57,7 @@ function respawn(at = safe) {
   stages.abort();
   physics.resetVehicle(vehicle, at.pos, at.heading);
   car.sync(vehicle, 1, 0);
-  rig.snap(car.object);
+  rig.snap(car.object, vehicle);
 }
 
 // --- Input ----------------------------------------------------------------
@@ -68,6 +68,7 @@ input.onPress(['Minus', 'NumpadSubtract'], () => ascii.setCellSize(Math.max(6, a
 input.onPress('KeyR', () => { ui.close(); respawn(world.spawn); });
 input.onPress('KeyE', () => { if (!ui.close()) zones.open(); });
 input.onPress('Escape', () => ui.close());
+input.onPress('KeyV', () => ui.note(`> camera: ${rig.toggleMode()}`));
 
 // --- Where am I / where next -------------------------------------------------
 function place() {
@@ -101,7 +102,7 @@ function navNote(nav, dt) {
   navTimer -= dt;
   if (navTimer > 0 || !nav || stages.state !== 'idle' || Math.abs(vehicle.speed) < 2) return;
   navTimer = 8;
-  const heading = ((-vehicle.heading * 180 / Math.PI) % 360 + 360) % 360;
+  const heading = ((-rig.yaw * 180 / Math.PI) % 360 + 360) % 360;
   const rel = ((nav.bearing - heading) % 360 + 360) % 360;
   const clock = Math.round(rel / 30) % 12 || 12;
   ui.note(`> ${nav.name} · ${Math.round(nav.dist)}m · ${clock} o'clock`);
@@ -153,7 +154,7 @@ const loop = createLoop({
 
     const nav = nextTarget();
     navNote(nav, dt);
-    ui.update({ vehicle, place: place(), zone: zones.current, nav, dt });
+    ui.update({ vehicle, place: place(), zone: zones.current, nav, viewYaw: rig.yaw, dt });
   },
 });
 
