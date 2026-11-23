@@ -261,13 +261,13 @@ const fragmentShader = /* glsl */ `
     }
 
     // Shade hatching: dark ground (cast shadows, slopes turned away) is drawn
-    // with diagonal strokes on a world-anchored grid, like pen hatching,
-    // instead of a dark empty block. Darker = denser strokes.
+    // as pen hatching instead of a dark empty block. Strokes run on the cell
+    // grid's diagonals ('/' in cells with equal col − row), so neighbouring
+    // strokes join into continuous lines. Darker = denser lines.
     bool soft = aByte >= 64.0 && aByte < 128.0;
     if (edge == 0.0 && soft && lum < hatchLevel) {
-      vec2 hq = floor(wxz * 2.5);
-      float spacing = lum < hatchLevel * 0.6 ? 2.0 : 3.0;
-      idx = mod(hq.x + hq.y, spacing) < 0.5 ? edgeStart + 3.0 : start; // '/' or blank
+      float spacing = lum < hatchLevel * 0.6 ? 3.0 : 4.0;
+      idx = mod(cell.x - cell.y, spacing) < 0.5 ? edgeStart + 3.0 : start; // '/' or blank
     }
 
     // Glyph density carries brightness, so normalise colour to full hue.
