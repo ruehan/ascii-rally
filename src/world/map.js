@@ -6,12 +6,13 @@
 import world from './regions/world.js';
 import core from './regions/core.js';
 import gp from './regions/gp.js';
+import highway, { loop24 } from './regions/highway.js';
 
 /**
  * Regions are concatenated in order. Terrain features apply in type order
  * (see terrain.js), so region order only matters within a type.
  */
-const regions = [world, core, gp];
+const regions = [world, core, gp, highway];
 const all = key => regions.flatMap(r => r[key] ?? []);
 
 export default {
@@ -31,16 +32,5 @@ export default {
   stages: all('stages'),
   scatter: all('scatter'),
 
-  // 24H loop: a route stitched from existing roads (clockwise). Driving it
-  // runs the clock from 15:00 round to 15:00; career milestones sit along it.
-  loop24: {
-    route: [
-      { trail: 'valley' },
-      { trail: 'coast', from: 211 },
-      { trail: 'east' },
-      { points: [[22, 124], [10, 108], [0, 99]] }, // across the paddock back to the start
-    ],
-    start: 10,          // start line, metres along the route
-    startHour: 15,
-  },
+  loop24,
 };

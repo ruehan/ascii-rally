@@ -119,6 +119,15 @@ for (const cfg of map.stages) {
 console.log('  stage times (autopilot):');
 for (const [id, t] of Object.entries(times)) console.log(`    ${id}  ${CARS.map(c => `${c} ${t[c]}`).join('  ')}`);
 
+// The long straight is long enough for an F1 car to pass 300 km/h.
+{
+  const straight = T.trails.find(t => t.id === 'straight');
+  let top = 0;
+  run({ path: straight.path, cum: straight.cum, car: 'formula', step: v => { top = Math.max(top, v.speed); } });
+  assert.ok(top * 3.6 > 300, `FORMULA top speed on the long straight: ${(top * 3.6).toFixed(0)} km/h`);
+  console.log(`  long straight: FORMULA ${(top * 3.6).toFixed(0)} km/h`);
+}
+
 // The 24H loop can be driven start to finish.
 {
   const bus = createBus();
@@ -127,7 +136,7 @@ for (const [id, t] of Object.entries(times)) console.log(`    ${id}  ${CARS.map(
   const route = w.route;
   const loop = createLoop24({ route, start: map.loop24.start, milestones: [1, 2, 3, 4, 5, 6].map(i => ({ year: i })), bus });
   const r = run({
-    path: route.path, cum: route.cum, from: 2, to: route.length, timeout: 240,
+    path: route.path, cum: route.cum, from: 2, to: route.length, timeout: 600,
     step: (v, dt) => { loop.update(dt, v); },
     done: () => events.includes('loop:finish') || events.includes('loop:pause'),
   });

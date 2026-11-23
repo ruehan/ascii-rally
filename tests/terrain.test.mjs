@@ -132,3 +132,24 @@ console.log('all terrain tests passed');
   near(t.heightAt(50, 70), 3 + 50 * 0.05, 1e-4, 'plane slope');
   console.log('flat/plane tests passed');
 }
+
+// --- fast roads on the real map have no unintended crests ------------------------
+// A car leaves the ground where v²·κ > g (vertical gravity 12): at ~340 km/h
+// any convex vertical curve tighter than ~740 m launches it.
+{
+  const map = (await import(root + '/src/world/map.js')).default;
+  const features = [...map.terrain.features, ...map.zones.map(z => ({ type: 'pad', pos: z.pos, r: z.r, y: z.y })), ...map.trails.map(t => ({ type: 'trail', ...t }))];
+  const T = createTerrain({ size: map.size, ...map.terrain, features });
+  // Minimum convex radius (m) ≈ (design speed)² / 12.
+  const FAST = { gp: 600, straight: 700, link: 400, 'coast-e': 300, pass: 200, vigna: 250, valley: 150 };
+  for (const [id, minR] of Object.entries(FAST)) {
+    const t = T.trails.find(tr => tr.id === id);
+    let worst = Infinity, at = 0;
+    for (let s = 20; s < t.length - 20; s += 5) {
+      const k = (t.profileAt(s - 20) - 2 * t.profileAt(s) + t.profileAt(s + 20)) / 400; // h''
+      if (k < 0 && -1 / k < worst) { worst = -1 / k; at = s; }
+    }
+    assert.ok(worst >= minR, `${id}: convex radius ${worst.toFixed(0)} m at s=${at} (< ${minR})`);
+  }
+  console.log('fast road profile tests passed');
+}

@@ -231,6 +231,22 @@ export function createTerrain({ size = 400, cell = 2, seed = 1, base = {}, featu
         profile[i] = Math.max(profile[i + 1] - maxGrade, Math.min(profile[i + 1] + maxGrade, profile[i]));
       }
     }
+    // The limiter leaves kinks where it starts/stops clipping; at speed a
+    // convex kink launches the car, so round them off (ends stay pinned).
+    {
+      const k = Math.max(2, Math.round(smooth / 4));
+      const src = Float32Array.from(profile);
+      for (let i = 0; i < steps; i++) {
+        let sum = 0, cnt = 0;
+        for (let j = i - k; j <= i + k; j++) {
+          if (f.closed) { sum += src[(j + steps) % steps]; cnt++; continue; }
+          if (j < 0 || j >= steps) continue;
+          sum += src[j]; cnt++;
+        }
+        const w = f.closed ? 1 : Math.min(1, i / k, (steps - 1 - i) / k); // pinned ends
+        profile[i] = src[i] + (sum / cnt - src[i]) * w;
+      }
+    }
     for (const c of crests) {
       for (let i = 0; i < steps; i++) profile[i] += c.height * bump(Math.abs(i - c.at), c.length / 2);
     }

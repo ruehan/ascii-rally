@@ -7,6 +7,8 @@ const OFF_ROUTE_TIME = 3;
 /**
  * Stitches trail sections (and raw point lists) into one route polyline.
  * Each part: { trail: id, from?, to? } or { points: [[x,z], ...] }.
+ * from > to drives a section in reverse; negative values count back from
+ * the trail's end (-1 = the end).
  */
 export function buildRoute(parts, trails, spacing = 2) {
   const pts = [];
@@ -16,8 +18,11 @@ export function buildRoute(parts, trails, spacing = 2) {
       continue;
     }
     const t = trails.find(tr => tr.id === part.trail);
-    const from = part.from ?? 0, to = part.to ?? t.cum.at(-1);
-    for (let s = from; s <= to; s += spacing) {
+    const len = t.cum.at(-1);
+    const at = v => (v < 0 ? len + 1 + v : v); // negative = from the end (-1 = the very end)
+    const from = at(part.from ?? 0), to = at(part.to ?? -1);
+    const step = from <= to ? spacing : -spacing; // from > to: drive it in reverse
+    for (let s = from; step > 0 ? s <= to : s >= to; s += step) {
       const p = pointAt(t.path, t.cum, s);
       pts.push([p.x, p.z]);
     }

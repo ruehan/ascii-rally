@@ -89,6 +89,7 @@ export class ArcadePhysics {
     v.airborne = false;
     this._sampleGround(v);
     v.y = this._ground.h;
+    v.groundPrev = v.y;
     v.pitch = this._ground.pitch;
     v.roll = this._ground.roll;
     this._snapshot(v);
@@ -269,7 +270,9 @@ export class ArcadePhysics {
 
   _stepVertical(v, dt) {
     const g = this._sampleGround(v);
-    const Gv = this.gravity;
+    // Aero downforce presses the car down too: a fast F1 car stays glued
+    // over bumps that would launch a rally car.
+    const Gv = this.gravity + (0.5 * RHO * v.car.cla * v.speed * v.speed) / v.car.mass;
     if (v.airborne) {
       v.airTime += dt;
       v.vy -= Gv * dt;
@@ -282,22 +285,25 @@ export class ArcadePhysics {
         v.y = g.h;
         v.vy = 0;
         v.airborne = false;
+        v.groundPrev = g.h;
       }
       return;
     }
-    // Grounded: take off when the ground drops away faster than the car would
-    // fall unsupported (crests, lips).
-    const vyFree = v.vy - Gv * dt;
-    const yFree = v.y + vyFree * dt;
-    if (yFree > g.h + 0.01) {
+    // Grounded: the car falls under gravity (+ downforce) and the ground can
+    // only push it up. Where the ground drops away faster than that (crests),
+    // a gap builds up over successive steps; past 5 cm the car is airborne.
+    const vg = (g.h - (v.groundPrev ?? g.h)) / dt; // ground's vertical speed under the car
+    v.groundPrev = g.h;
+    v.vy -= Gv * dt;
+    v.y += v.vy * dt;
+    if (v.y <= g.h) {
+      v.y = g.h;
+      v.vy = Math.max(v.vy, vg);
+    } else if (v.y > g.h + 0.05) {
       v.airborne = true;
       v.airTime = 0;
-      v.vy = vyFree;
-      v.y = yFree;
       return;
     }
-    v.vy = (g.h - v.y) / dt;
-    v.y = g.h;
     const k = Math.min(1, dt * 12);
     v.pitch += (g.pitch - v.pitch) * k;
     v.roll += (g.roll - v.roll) * k;

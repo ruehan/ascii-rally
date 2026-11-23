@@ -409,13 +409,13 @@ export function buildWorld(scene, map) {
       put(G.block(), '#f4f4f4', CHARSET.WALL, x, y, z, 0.3, 1.2, 1.4, { yaw: yawAlong(p.tx, p.tz) });
       for (let k = 0; k < n; k++) put(G.block(), '#1a1a1a', CHARSET.GLYPH, x, y + 0.25 + k * 0.32, z, 0.32, 0.12, 1.2, { yaw: yawAlong(p.tx, p.tz), shadow: false });
     }
-    // Tyre wall outside T1.
-    for (let z = 296; z <= 350; z += 1.1) {
+    // Tyre wall outside T1 (south of the link road, which is T1's straight-on escape).
+    for (let z = 312; z <= 350; z += 1.1) {
       for (let row = 0; row < 3; row++) {
         put(G.ring(), row % 2 ? '#f4f4f4' : '#2b2b2b', CHARSET.CAR, 352, y + 0.15 + row * 0.3, z, 0.5, 0.5, 1.4, { rx: Math.PI / 2, shadow: false });
       }
     }
-    solid(box(352, 323, 0.6, 27, 0, 1, y));
+    solid(box(352, 331, 0.6, 19, 0, 1, y));
   }
 
   // --- Special stages: start arch + box, split gates, chequered finish -------------
@@ -478,7 +478,7 @@ export function buildWorld(scene, map) {
     };
     const at = d => pointAt(route.path, route.cum, d);
     const side = (p, off) => [p.x + p.tz * off, p.z - p.tx * off];
-    const W = 4.5; // half road + margin
+    const W = 8; // half of the widest road on the route (GP 12 m) + 2 m clearance
 
     // Start gate "24H".
     {
@@ -497,19 +497,25 @@ export function buildWorld(scene, map) {
       const d = map.loop24.start + span * (m.at ?? (i + 1) / (milestones.length + 1));
       const p = at(d);
       const yaw = yawAlong(p.tx, p.tz);
-      const [x, z] = side(p, -(W + 2));
+      // First clear spot off the road (roads can bend away from the route line,
+      // e.g. chicanes), trying farther out and then the other side.
+      let x, z;
+      for (const off of [-(W + 2), -(W + 6), W + 2, W + 6, -(W + 12), W + 12]) {
+        [x, z] = side(p, off);
+        if (isClear(x, z, 1.5, 2)) break;
+      }
       const y = h(x, z);
       put(G.block(), '#2b2b2b', CHARSET.WOOD, x, y, z, 0.25, 2.2, 0.25, { yaw });
       putGlow(x, y + 2.2, z, 2.6, 1.4, 0.2, yaw + Math.PI / 2);
       solid(circle(x, z, 0.4, 3.5, y));
     });
-    // Reflector posts every 12 m on the east (night) leg.
-    const east = trail('east');
-    if (east) {
-      for (let d = 6; d < east.length - 6; d += 12) {
-        const p = pointAt(east.path, east.cum, d);
+    // Reflector posts every 20 m along the long straight (the night leg).
+    const night = trail('straight');
+    if (night) {
+      for (let d = 6; d < night.length - 6; d += 20) {
+        const p = pointAt(night.path, night.cum, d);
         for (const sgn of [-1, 1]) {
-          const [x, z] = side(p, (east.width / 2 + 0.8) * sgn);
+          const [x, z] = side(p, (night.width / 2 + 2.5) * sgn);
           if (!isClear(x, z, 0.3, 0.3)) continue;
           put(G.block(), '#efefef', CHARSET.WALL, x, h(x, z), z, 0.15, 0.9, 0.15);
           putGlow(x, h(x, z) + 0.75, z, 0.18, 0.15, 0.18, 0);

@@ -39,6 +39,14 @@ function timesLog(stage, car, highlight) {
   return `<div class="log">${rows.join('\n')}</div>`;
 }
 
+/** Project shown for a stage; fun stages (project: null) get a stand-in. */
+function projectOf(stage) {
+  return projects[stage.project] ?? {
+    title: stage.title ?? stage.name, year: '', role: '', stack: '',
+    summary: ['Fun stage — no project here, just the road.'], links: [],
+  };
+}
+
 /** Garage: car cards with real-world-ish specs; buttons emit car:select. */
 function carCards(current) {
   return CAR_ORDER.map(id => {
@@ -104,8 +112,7 @@ export function createUI({ bus, stages, onPanel, getCar }) {
     const car = getCar();
     if (zone.content === 'hq') {
       const html = stages.stages.map(st => {
-        const p = projects[st.project];
-        return `<h3>── ${esc(st.name)} · ${esc(p?.title ?? st.project)} ──</h3>${timesLog(st, car)}`;
+        return `<h3>── ${esc(st.name)} · ${esc(projectOf(st).title)} ──</h3>${timesLog(st, car)}`;
       }).join('');
       open('$ git log --stages', `<p>Stage times on this browser for <b>${esc(CARS[car].name)}</b>. Beat the owner's targets.</p>${html}`);
       return;
@@ -130,7 +137,7 @@ export function createUI({ bus, stages, onPanel, getCar }) {
     const rec = leaderboard.add(stage.id, car, time);
     const target = stage.target?.[car];
     const delta = target ? time - target : null;
-    const p = projects[stage.project] ?? { title: stage.project, summary: [], links: [] };
+    const p = projectOf(stage);
     const verdict = delta === null ? `<span>${esc(CARS[car].name)}</span>`
       : delta <= 0 ? `<span style="color:var(--ui-accent)">▼ ${delta.toFixed(1)} — beat the owner (${esc(CARS[car].name)})</span>`
       : `<span style="color:var(--ui-bad)">▲ +${delta.toFixed(1)} vs owner (${esc(CARS[car].name)})</span>`;
@@ -165,7 +172,7 @@ export function createUI({ bus, stages, onPanel, getCar }) {
   bus.on('loop:finish', () => { note('> 24H · chequered flag'); showCard('24H · finished', ['Round the clock — and back to now.']); });
   bus.on('loop:pause', () => note('> 24H · session paused (off route)'));
   bus.on('zone:open', ({ zone }) => openZone(zone));
-  bus.on('stage:armed', ({ stage }) => { close(); noteLines = []; note(`> ${stage.name} armed · ${projects[stage.project]?.title ?? ''}`); });
+  bus.on('stage:armed', ({ stage }) => { close(); noteLines = []; note(`> ${stage.name} armed · ${projectOf(stage).title}`); });
   bus.on('stage:count', ({ n }) => { count.textContent = n; count.classList.remove('go'); });
   bus.on('stage:go', ({ jumped }) => {
     count.textContent = 'GO'; count.classList.add('go'); countTimer = 0.8;
@@ -194,7 +201,7 @@ export function createUI({ bus, stages, onPanel, getCar }) {
     if (stages.state === 'running') {
       const st = stages.active;
       const delta = lastSplit === null ? '' : `${sep}<span class="${lastSplit <= 0 ? 'good' : 'bad'}">${lastSplit <= 0 ? '▼' : '▲'} ${lastSplit.toFixed(1)}</span>`;
-      top.innerHTML = `<span class="prompt">${esc(st.name)}</span>${sep}<span class="opt">/projects/${esc(projects[st.project]?.title ?? '')}</span>${sep}${formatTime(stages.time)}${delta}${sep}${kmh} km/h${sep}<span class="opt">${alt}</span><span class="right">${Math.round(stages.progress * 100)}%</span>`;
+      top.innerHTML = `<span class="prompt">${esc(st.name)}</span>${sep}<span class="opt">${st.project ? '/projects/' : '/stages/'}${esc(projectOf(st).title)}</span>${sep}${formatTime(stages.time)}${delta}${sep}${kmh} km/h${sep}<span class="opt">${alt}</span><span class="right">${Math.round(stages.progress * 100)}%</span>`;
     } else if (loop && loop.state === 'running') {
       const hh = Math.floor(loop.hour), mm = Math.floor((loop.hour - hh) * 60);
       const clock = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
