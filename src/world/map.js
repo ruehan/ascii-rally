@@ -33,6 +33,7 @@ export default {
   zones: all('zones'),
   stages: all('stages'),
   scatter: all('scatter'),
+  vineyards: all('vineyards'),
   biomes: all('biomes'),
   patches: all('patches'),
 

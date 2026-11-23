@@ -4,6 +4,7 @@ const COLORS = {
   sea: '#3f86ad', low: '#5f7038', mid: '#857a45', high: '#a89a70', cliff: '#8f7f6c',
   gravel: '#e8d3a2', cobble: '#d9c9b0', asphalt: '#aab3c2', dirt: '#b08a5c', pad: '#ddd3bc',
   tree: '#3f9f55', building: '#e0a070', kerb: '#ff6b6b', sand: '#efe0b4',
+  snowfield: '#e6eefa', desert: '#d6b07a', dune: '#e8c587', snowroad: '#b8c4d6', ice: '#9fd8ff',
 };
 const CLASS_COLORS = MAP_CLASSES.map(c => COLORS[c.id]);
 const ARROWS = ['↑', '↗', '→', '↘', '↓', '↙', '←', '↖'];
@@ -43,12 +44,26 @@ export function createMapUI({ fine, coarse, destinations, onTravel, onOpenChange
     ctx.textBaseline = 'top';
     const [cc, cr] = fine.toCell(v.x, v.z);
     const c0 = Math.round(cc) - (COLS >> 1), r0 = Math.round(cr) - (ROWS >> 1);
+    // Ground is a dim colour field; roads are solid bright cells; trees and
+    // buildings keep their glyphs. Reads at a glance, still a character grid.
     for (let r = 0; r < ROWS; r++) {
       for (let c = 0; c < COLS; c++) {
         const k = fine.classAt(c0 + c, r0 + r);
         if (k < 0) continue;
-        ctx.fillStyle = CLASS_COLORS[k];
-        ctx.fillText(MAP_CLASSES[k].ch, c * cw, r * ch);
+        if (fine.isGround(k)) {
+          ctx.globalAlpha = 0.22;
+          ctx.fillStyle = CLASS_COLORS[k];
+          ctx.fillRect(c * cw, r * ch, cw, ch);
+          ctx.globalAlpha = 1;
+        } else if (MAP_CLASSES[k].id === 'tree' || MAP_CLASSES[k].id === 'building') {
+          ctx.fillStyle = CLASS_COLORS[k];
+          ctx.fillText(MAP_CLASSES[k].ch, c * cw, r * ch);
+        } else {
+          ctx.globalAlpha = 0.85;
+          ctx.fillStyle = CLASS_COLORS[k];
+          ctx.fillRect(c * cw, r * ch + 1, cw, ch - 2);
+          ctx.globalAlpha = 1;
+        }
       }
     }
     // Destination markers in view.
@@ -111,10 +126,23 @@ export function createMapUI({ fine, coarse, destinations, onTravel, onOpenChange
 
   const side = document.createElement('div');
   side.className = 'side';
-  side.innerHTML = `<h2>$ map --travel</h2>${destinations.map(d =>
-    `<button data-key="${esc(d.key ?? '')}"><b>${esc(d.key ?? '·')}</b> ${esc(d.label)}</button>`).join('')}
-    <p class="foot">click or press a number · [M]/[Esc] close</p>`;
-  side.querySelectorAll('button').forEach((b, i) => b.addEventListener('click', () => travel(destinations[i])));
+  const group = g => destinations.filter(d => (d.group ?? 'places') === g);
+  const list = ds => ds.map(d =>
+    `<button data-i="${destinations.indexOf(d)}"><b>${esc(d.key ?? '·')}</b> ${esc(d.label)}</button>`).join('');
+  side.innerHTML = `<h2>$ map --travel</h2><h3>places</h3>${list(group('places'))}<h3>stages</h3>${list(group('stages'))}
+    <p class="foot">click or press its key · [M]/[Esc] close</p>`;
+  side.querySelectorAll('button').forEach(b => b.addEventListener('click', () => travel(destinations[+b.dataset.i])));
+
+  // While the map is open, destination keys travel (and don't reach the
+  // game's own key bindings, e.g. Q = change car).
+  window.addEventListener('keydown', e => {
+    if (overlay.hidden || e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
+    const d = destinations.find(x => x.key && x.key === e.key.toLowerCase());
+    if (!d) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    travel(d);
+  }, true);
 
   overlay.append(frame, side);
   document.body.appendChild(overlay);
@@ -126,12 +154,24 @@ export function createMapUI({ fine, coarse, destinations, onTravel, onOpenChange
     const fs = Math.max(5, Math.min(w / (coarse.cols * 0.6), h / coarse.rows));
     pre.style.fontSize = `${fs}px`;
     const charW = pre.getBoundingClientRect().width / coarse.cols;
+    // Place labels, nudging any that would overlap an earlier one up/down.
+    const placed = [];
     for (const { d, b } of markers) {
       const [c, r] = coarse.toCell(d.x, d.z);
+      const left = c > coarse.cols * 0.75; // near the right edge: hang to the left
+      b.style.transform = left ? 'translate(calc(-100% + 6px), -50%)' : 'translate(-6px, -50%)';
+      const w = b.offsetWidth, hgt = b.offsetHeight + 2;
+      const x0 = c * charW + (left ? -w + 6 : -6);
+      let y = r * fs;
+      for (let i = 0; i < 12; i++) {
+        const hit = placed.find(p => x0 < p.x1 && x0 + w > p.x0 && Math.abs(y - p.y) < hgt);
+        if (!hit) break;
+        y = hit.y + (i % 2 ? -hgt : hgt) * (y >= hit.y ? 1 : -1);
+      }
+      placed.push({ x0, x1: x0 + w, y });
       b.style.left = `${c * charW}px`;
-      b.style.top = `${r * fs}px`;
-      // Near the right edge, hang the label to the left of its point.
-      b.style.transform = c > coarse.cols * 0.75 ? 'translate(calc(-100% + 6px), -50%)' : '';
+      b.style.top = `${y}px`;
+      b.classList.toggle('nudged', Math.abs(y - r * fs) > 1);
     }
     return { fs, charW };
   }
@@ -158,13 +198,6 @@ export function createMapUI({ fine, coarse, destinations, onTravel, onOpenChange
     get isOpen() { return !overlay.hidden; },
     toggle() { return overlay.hidden ? (open(), true) : (close(), false); },
     close,
-    /** Number key → destination (if the map is open). */
-    pressKey(key) {
-      if (overlay.hidden) return false;
-      const d = destinations.find(x => x.key === key);
-      if (d) travel(d);
-      return !!d;
-    },
     update(dt, v) {
       miniTimer -= dt;
       if (miniTimer <= 0) { drawMini(v); miniTimer = 1 / 15; }

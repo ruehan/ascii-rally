@@ -135,6 +135,7 @@ function place() {
   if (x < -280 && zz > 180) return '~/desert';
   if (x < -200 && zz < -250) return '~/snow';
   if (x < -200) return '~/mountains';
+  if (x > 205 && x < 480 && zz > -240 && zz < 200) return '~/vineyards';
   if (x > 205) return '~/endurance';
   if (zz < -110) return '~/coast';
   if (x < -20) return '~/forest';
@@ -142,10 +143,10 @@ function place() {
   return '~/valley';
 }
 
-/** Nearest stage start or zone not yet visited this session. */
+/** Nearest stage start or zone not yet visited this session (hidden ones are for finding). */
 const targets = [
-  ...stages.stages.map(st => ({ id: st.id, name: `${st.name} start`, x: st.start.x, z: st.start.z })),
-  ...map.zones.filter(z => z.id !== 'paddock').map(z => ({ id: z.id, name: z.title.toLowerCase(), x: z.pos[0], z: z.pos[1] })),
+  ...stages.stages.filter(st => !st.hidden).map(st => ({ id: st.id, name: `${st.name} start`, x: st.start.x, z: st.start.z })),
+  ...map.zones.filter(z => z.id !== 'paddock' && !z.hidden).map(z => ({ id: z.id, name: z.title.toLowerCase(), x: z.pos[0], z: z.pos[1] })),
   { id: '24h', name: '24H gate', x: loop24.startPoint.x, z: loop24.startPoint.z },
 ];
 bus.on('loop:finish', () => ui.visited.add('24h'));
@@ -172,21 +173,26 @@ function navNote(nav, dt) {
 }
 
 // --- Map + fast travel -------------------------------------------------------------
-const gridArgs = { terrain, surfaces, colliders: world.colliders, waterLevel: world.waterLevel };
+const gridArgs = { terrain, surfaces, biomes: world.biomes, colliders: world.colliders, waterLevel: world.waterLevel };
 const along = p => Math.atan2(-p.tx, -p.tz); // car heading that faces along a path tangent
 const gateP = loop24.startPoint;
 const gate = { x: gateP.x - gateP.tx * 12, z: gateP.z - gateP.tz * 12, heading: along(gateP) }; // just before the line
 const zonePos = id => map.zones.find(z => z.id === id);
+// Places on number keys; stages on letters in stage order (no M: it closes
+// the map). Hidden stages stay off the map.
+const STAGE_KEYS = 'abcdefghijklnopqrstuvwxyz';
+const stageNum = st => +(/\d+/.exec(st.name)?.[0] ?? 99);
 const destinations = [
   { key: '1', label: 'paddock', x: world.spawn.pos[0], z: world.spawn.pos[1], heading: world.spawn.heading },
-  ...stages.stages.map((st, i) => ({
-    key: String(i + 2), label: `${st.name} ${st.trail.id}`, x: st.start.x, z: st.start.z, heading: along(st.start),
+  { key: '2', label: 'rally hq', x: zonePos('piazza').pos[0], z: zonePos('piazza').pos[1], heading: 0 },
+  { key: '3', label: 'garage', x: zonePos('garage').pos[0], z: zonePos('garage').pos[1], heading: 0 },
+  { key: '4', label: 'pit wall', x: zonePos('pitwall').pos[0], z: zonePos('pitwall').pos[1], heading: 0 },
+  { key: '5', label: '24H gate', ...gate },
+  { key: '6', label: 'lookout', x: zonePos('lookout').pos[0], z: zonePos('lookout').pos[1], heading: 0 },
+  ...stages.stages.filter(st => !st.hidden).sort((a, b) => stageNum(a) - stageNum(b)).map((st, i) => ({
+    key: STAGE_KEYS[i], group: 'stages', label: `${st.name} ${st.title ?? st.trail.id}`.toLowerCase(),
+    x: st.start.x, z: st.start.z, heading: along(st.start),
   })),
-  { key: '8', label: '24H gate', ...gate },
-  { key: '9', label: 'rally hq', x: zonePos('piazza').pos[0], z: zonePos('piazza').pos[1], heading: 0 },
-  { key: '0', label: 'lookout', x: zonePos('lookout').pos[0], z: zonePos('lookout').pos[1], heading: 0 },
-  { label: 'garage', x: zonePos('garage').pos[0], z: zonePos('garage').pos[1], heading: 0 },
-  { label: 'pit wall', x: zonePos('pitwall').pos[0], z: zonePos('pitwall').pos[1], heading: 0 },
 ];
 const mapUI = createMapUI({
   fine: buildMapGrid({ ...gridArgs, cellX: 2 }),
@@ -203,7 +209,6 @@ const mapUI = createMapUI({
   },
 });
 input.onPress('KeyM', () => mapUI.toggle());
-for (let i = 0; i <= 9; i++) input.onPress(`Digit${i}`, () => mapUI.pressKey(String(i)));
 
 // --- Resize ---------------------------------------------------------------
 function resize() {

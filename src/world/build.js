@@ -4,7 +4,7 @@ import { material } from './materials.js';
 import { geometries as G } from './geometries.js';
 import { Instancer } from './instancer.js';
 import { createTerrain } from './terrain.js';
-import { createSurfaces } from './surfaces.js';
+import { createSurfaces, SDF_RANGE } from './surfaces.js';
 import { createTerrainMesh } from './terrainMesh.js';
 import { createBiomes } from './biomes.js';
 import { pointAt } from './path.js';
@@ -114,10 +114,49 @@ export function buildWorld(scene, map) {
     }
     return { lo, hi };
   };
+  // Road/pad edges in a coarse grid, for clearances beyond the surface
+  // map's SDF range (it only knows distances up to SDF_RANGE).
+  const FAR = 30, CELL = 20, edges = new Map();
+  const edgeKey = (ix, iz) => ix * 100003 + iz;
+  const addEdge = (e, x0, z0, x1, z1) => {
+    for (let ix = Math.floor((x0 - FAR) / CELL); ix <= Math.floor((x1 + FAR) / CELL); ix++) {
+      for (let iz = Math.floor((z0 - FAR) / CELL); iz <= Math.floor((z1 + FAR) / CELL); iz++) {
+        const k = edgeKey(ix, iz);
+        if (!edges.has(k)) edges.set(k, []);
+        edges.get(k).push(e);
+      }
+    }
+  };
+  for (const t of terrain.trails) {
+    const half = (t.width ?? 6) / 2;
+    for (let i = 0; i < t.path.length - 1; i += 2) {
+      const [ax, az] = t.path[i], [bx, bz] = t.path[Math.min(t.path.length - 1, i + 2)];
+      addEdge({ ax, az, bx, bz, half }, Math.min(ax, bx), Math.min(az, bz), Math.max(ax, bx), Math.max(az, bz));
+    }
+  }
+  for (const zn of map.zones) {
+    const [cx, cz] = zn.pos;
+    addEdge({ ax: cx, az: cz, bx: cx, bz: cz, half: zn.r }, cx, cz, cx, cz);
+  }
+  /** Metres from (x, z) to the nearest road/pad edge (capped at FAR). */
+  const roadGap = (x, z) => {
+    let best = FAR;
+    for (const e of edges.get(edgeKey(Math.floor(x / CELL), Math.floor(z / CELL))) ?? []) {
+      const dx = e.bx - e.ax, dz = e.bz - e.az;
+      const t = Math.max(0, Math.min(1, ((x - e.ax) * dx + (z - e.az) * dz) / (dx * dx + dz * dz || 1)));
+      best = Math.min(best, Math.hypot(x - e.ax - dx * t, z - e.az - dz * t) - e.half);
+    }
+    return best;
+  };
+
   /** True if a circle of radius r is off roads/pads and clear of placed objects. */
   const isClear = (x, z, r, roadMargin = 0.5) => {
-    for (const [dx, dz] of [[0, 0], [r, 0], [-r, 0], [0, r], [0, -r]]) {
-      if (surfaces.insideAt(x + dx, z + dz) > -roadMargin) return false;
+    if (roadMargin > SDF_RANGE - 0.5) {
+      if (roadGap(x, z) < r + roadMargin) return false;
+    } else {
+      for (const [dx, dz] of [[0, 0], [r, 0], [-r, 0], [0, r], [0, -r]]) {
+        if (surfaces.insideAt(x + dx, z + dz) > -roadMargin) return false;
+      }
     }
     for (const s of occupied.query(x, z, r)) if (circleContact(s, x, z, r, _c)) return false;
     return true;
@@ -600,10 +639,32 @@ export function buildWorld(scene, map) {
     },
     rock(x, z, rand) {
       const s = 0.5 + rand() * 1.3;
-      put(G.rock(), '#9aa3ad', CHARSET.ROCK, x, h(x, z) + s * 0.3, z, s, s * 0.8, s, { yaw: rand() * 6, rx: rand() * 3 });
+      const sandstone = biomes.biomeAt(x, z, h(x, z)).desert > 0.5;
+      put(G.rock(), sandstone ? '#c48a5c' : '#9aa3ad', CHARSET.ROCK, x, h(x, z) + s * 0.3, z, s, s * 0.8, s, { yaw: rand() * 6, rx: rand() * 3 });
       return s > 0.9 ? solid(circle(x, z, s * 0.8, s, h(x, z))) : null;
     },
   };
+  // Vineyards: rows of vines on posts, following each block's row direction.
+  for (const vy of map.vineyards ?? []) {
+    const [x0, z0, x1, z1] = vy.rect;
+    const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
+    const ux = Math.sin(vy.yaw), uz = Math.cos(vy.yaw);   // along the row
+    const vx = uz, vz = -ux;                              // across rows
+    const half = Math.hypot(x1 - x0, z1 - z0) / 2;
+    const rand = rng(Math.round(cx * 7 + cz));
+    for (let b = -half; b <= half; b += vy.spacing) {
+      for (let a = -half; a <= half; a += 1.6) {
+        const x = cx + ux * a + vx * b, z = cz + uz * a + vz * b;
+        if (x < x0 || x > x1 || z < z0 || z > z1) continue;
+        if (h(x, z) < 1.5 || terrain.normalAt(x, z, nrm).y < 0.88) continue;
+        if (!isClear(x, z, 0.6, 1.5)) continue;
+        const y = h(x, z);
+        put(G.block(), rand() < 0.5 ? '#4f7f3a' : '#5d8a3c', CHARSET.FOLIAGE, x, y - 0.1, z, 0.7, 1.1 + rand() * 0.25, 1.5, { yaw: vy.yaw, shadow: false });
+        occupied.insert(circle(x, z, 0.6, 1.3, y)); // keeps trees out of the rows (no collider: drive through)
+      }
+    }
+  }
+
   for (const sc of map.scatter) {
     const rand = rng(sc.seed);
     const [x0, z0, x1, z1] = sc.rect;

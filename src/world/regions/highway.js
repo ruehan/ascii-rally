@@ -50,6 +50,14 @@ export default {
     { id: 'ss12', name: 'SS12', title: 'THE LONG STRAIGHT', trail: 'straight', from: 10, to: -5, splits: [480, 760], project: null, hue: '#ffbe0b', target: {} },
     { id: 'ss13', name: 'SS13', title: 'VIGNA', trail: 'vigna', from: 10, to: -20, splits: [120, 220], project: null, hue: '#9d4edd', target: {} },
   ],
+  // Vine rows (rect [x0, z0, x1, z1], row direction yaw): on the hillsides
+  // either side of the vineyard road and around the cantina.
+  vineyards: [
+    { rect: [235, -215, 365, -70], yaw: 0.35, spacing: 3 },
+    { rect: [250, -72, 330, -42], yaw: 0.1, spacing: 3 },
+    { rect: [360, 55, 470, 150], yaw: -0.25, spacing: 3 },
+    { rect: [275, 105, 380, 190], yaw: 0.15, spacing: 3 },
+  ],
   scatter: [
     { kind: 'cypress', rect: [205, -330, 470, 240], count: 220, seed: 81, clearance: 8 },
     { kind: 'broadleaf', rect: [205, 240, 585, 585], count: 90, seed: 82, clearance: 14 },

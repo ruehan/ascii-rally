@@ -22,20 +22,31 @@ export const MAP_CLASSES = [
   { id: 'building', ch: 'H' },
   { id: 'kerb', ch: '=' },
   { id: 'sand', ch: '.' },
+  { id: 'snowfield', ch: '*' },   // off-road snow (biome / above the snowline)
+  { id: 'desert', ch: '.' },      // desert floor
+  { id: 'dune', ch: '~' },        // dune crests
+  { id: 'snowroad', ch: ':' },    // packed-snow road
+  { id: 'ice', ch: '-' },
 ];
 const C = Object.fromEntries(MAP_CLASSES.map((c, i) => [c.id, i]));
 
-const SURFACE_CLASS = { gravel: C.gravel, cobble: C.cobble, asphalt: C.asphalt, dirt: C.dirt, pad: C.pad, kerb: C.kerb, sand: C.sand };
+const SURFACE_CLASS = {
+  gravel: C.gravel, cobble: C.cobble, asphalt: C.asphalt, dirt: C.dirt, pad: C.pad, kerb: C.kerb, sand: C.sand,
+  snow: C.snowroad, ice: C.ice, dune: C.dune,
+};
+/** Classes that are plain ground (props may be drawn over them). */
+const GROUND = new Set([C.sea, C.low, C.mid, C.high, C.cliff, C.snowfield, C.desert, C.dune]);
 
 /**
  * @param {object} o
  * @param {object} o.terrain   createTerrain() result
+ * @param {object} [o.biomes]  createBiomes() result (snow / desert ground)
  * @param {object} o.surfaces  createSurfaces() result
  * @param {Array}  o.colliders physics shapes (trees = small circles, buildings = boxes)
  * @param {number} o.cellX     metres per column
  * @param {number} [o.waterLevel]
  */
-export function buildMapGrid({ terrain, surfaces, colliders = [], cellX = 2, waterLevel = 0 }) {
+export function buildMapGrid({ terrain, surfaces, biomes = null, colliders = [], cellX = 2, waterLevel = 0 }) {
   const cellZ = cellX / CHAR_ASPECT;
   const size = terrain.size;
   const origin = -size / 2;
@@ -55,7 +66,12 @@ export function buildMapGrid({ terrain, surfaces, colliders = [], cellX = 2, wat
         const y = terrain.heightAt(x, z);
         if (y < waterLevel + 0.2) k = C.sea;
         else if (terrain.normalAt(x, z, nrm).y < 0.6) k = C.cliff;
-        else k = y < 6 ? C.low : y < 14 ? C.mid : C.high;
+        else {
+          const b = biomes ? biomes.biomeAt(x, z, y) : null;
+          if (b && b.snow > 0.5) k = C.snowfield;
+          else if (b && b.desert > 0.5) k = y > 6.5 ? C.dune : C.desert;
+          else k = y < 6 ? C.low : y < 14 ? C.mid : C.high;
+        }
       }
       cls[r * cols + c] = k;
     }
@@ -66,9 +82,9 @@ export function buildMapGrid({ terrain, surfaces, colliders = [], cellX = 2, wat
     const c = Math.floor((x - origin) / cellX), r = Math.floor((z - origin) / cellZ);
     return c >= 0 && r >= 0 && c < cols && r < rows ? r * cols + c : -1;
   };
-  const isGround = k => k <= C.cliff;
+  const isGround = k => GROUND.has(k) && k !== C.sea;
   for (const s of colliders) {
-    if (s.type === 'circle' && s.r < 0.7) {
+    if (s.type === 'circle' && s.r < 0.7 && s.h > 2.5) {
       const k = cell(s.x, s.z);
       if (k >= 0 && isGround(cls[k])) cls[k] = C.tree;
     } else if (s.type === 'box' && s.h > 2.5) {
@@ -86,6 +102,8 @@ export function buildMapGrid({ terrain, surfaces, colliders = [], cellX = 2, wat
 
   return {
     cols, rows, cellX, cellZ, origin, cls,
+    /** True for plain ground classes (no road, prop or building). */
+    isGround: k => GROUND.has(k),
     /** World → fractional [col, row]. */
     toCell: (x, z) => [(x - origin) / cellX, (z - origin) / cellZ],
     /** Glyph at a cell (space outside). */

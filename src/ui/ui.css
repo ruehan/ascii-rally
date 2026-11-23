@@ -120,6 +120,8 @@
 }
 .ui-map .side button:hover { border-color: var(--ui-warn); }
 .ui-map .side .foot { color: var(--ui-dim); margin-top: 10px; font-size: 11px; }
+.ui-map .side h3 { font: inherit; font-size: 11px; color: var(--ui-dim); margin: 8px 0 2px; text-transform: uppercase; letter-spacing: 0.08em; }
+.ui-map .marker.nudged { border-style: dashed; }
 
 @media (max-width: 900px) {
   .ui-map { flex-direction: column; }

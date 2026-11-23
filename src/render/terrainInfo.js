@@ -79,7 +79,7 @@ export function createTerrainInfoMaterial({ surfaceIdTex, surfaceSdfTex, size, b
         // Biomes (dithered at their borders): snow / desert glyphs off-road.
         float r = hash(floor(vWorld.xz * 2.0));
         if (vBiome.x > r) set = vWorld.y > 60.0 ? ${CHARSET.SNOW_HIGH}.0 : ${CHARSET.SNOW}.0;
-        else if (vBiome.y > r) set = vWorld.y > 9.0 ? ${CHARSET.DUNE}.0 : ${CHARSET.SAND}.0;
+        else if (vBiome.y > r) set = vWorld.y > 6.5 ? ${CHARSET.DUNE}.0 : ${CHARSET.SAND}.0;
         if (abs(wn.y) < 0.6) set = ${CHARSET.CLIFF}.0;
         float surfSet = uSurfSet[int(clamp(sid, 0.0, 15.0))];
         bool onSurf = surfSet >= 0.0;
