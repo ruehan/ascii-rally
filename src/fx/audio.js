@@ -93,6 +93,11 @@ export function createAudio() {
       if (ctx.state === 'suspended') ctx.resume();
     },
 
+    setMuted(m) {
+      muted = !!m;
+      if (ctx) ramp(master.gain, muted ? 0 : 0.35, 0.05);
+    },
+
     toggleMute() {
       muted = !muted;
       if (ctx) ramp(master.gain, muted ? 0 : 0.35, 0.05);

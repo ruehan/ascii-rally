@@ -84,6 +84,7 @@ export function createCameraRig(camera, terrain) {
     /** Kick the camera (landings, crashes). */
     shake(amount) { shake = Math.min(1.2, shake + amount); },
     toggleMode() { mode = mode === 'chase' ? 'top' : 'chase'; return mode; },
+    setMode(m) { if (m === 'chase' || m === 'top') mode = m; },
     get mode() { return mode; },
     /** Direction the camera looks (car-heading convention), for the UI. */
     get yaw() { return yaw; },

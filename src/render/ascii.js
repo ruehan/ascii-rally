@@ -449,6 +449,9 @@ export class AsciiRenderer {
     u.background.value.copy(look.fog).multiplyScalar(0.8);
   }
 
+  setColor(on) { this.material.uniforms.colorMode.value = on ? 1 : 0; }
+  setEdges(on) { this.material.uniforms.edgesOn.value = on ? 1 : 0; }
+
   toggleColor() {
     const u = this.material.uniforms.colorMode;
     u.value = u.value ? 0 : 1;

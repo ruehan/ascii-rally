@@ -37,12 +37,15 @@ export function createSurfaces({ size = 400, res = 0.5, trails = [], pads = [], 
   const origin = -size / 2;
   const ids = new Uint8Array(n * n);
   const sdf = new Uint8Array(n * n);   // 0 = far outside
-  const inside = new Float32Array(n * n).fill(-SDF_RANGE); // best (halfWidth - dist)
+  // Best (halfWidth - dist) per cell, in centimetres (Int16: half the memory of floats).
+  const Q = 100;
+  const inside = new Int16Array(n * n).fill(-SDF_RANGE * Q);
 
   const kerbCandidates = [];
   const stamp = (k, value, id) => {
-    if (value > inside[k]) {
-      inside[k] = value;
+    const q = Math.round(value * Q);
+    if (q > inside[k]) {
+      inside[k] = q;
       if (value >= 0) ids[k] = id;
     }
   };
@@ -78,7 +81,7 @@ export function createSurfaces({ size = 400, res = 0.5, trails = [], pads = [], 
   // Kerb only where the texel really ends up within 1.2 m of the road edge
   // (inside corners, a segment's edge strip can lie mid-road for its neighbour).
   for (const k of kerbCandidates) {
-    if (inside[k] >= 0 && inside[k] < 1.2 && ids[k] === SURFACE_IDS.asphalt) ids[k] = SURFACE_IDS.kerb;
+    if (inside[k] >= 0 && inside[k] < 1.2 * Q && ids[k] === SURFACE_IDS.asphalt) ids[k] = SURFACE_IDS.kerb;
   }
 
   for (const p of [...pads, ...patches]) {
@@ -95,14 +98,14 @@ export function createSurfaces({ size = 400, res = 0.5, trails = [], pads = [], 
         // Pads win over roads they overlap so the floor reads as one plaza.
         const k = iz * n + ix;
         const v = p.r - d;
-        if (v >= 0) { ids[k] = id; inside[k] = Math.max(inside[k], v); }
+        if (v >= 0) { ids[k] = id; inside[k] = Math.max(inside[k], Math.round(v * Q)); }
         else stamp(k, v, id);
       }
     }
   }
 
   for (let k = 0; k < n * n; k++) {
-    const v = Math.max(-SDF_RANGE, Math.min(SDF_RANGE, inside[k]));
+    const v = Math.max(-SDF_RANGE, Math.min(SDF_RANGE, inside[k] / Q));
     sdf[k] = Math.round(((v / SDF_RANGE) * 0.5 + 0.5) * 255);
   }
 
@@ -117,6 +120,6 @@ export function createSurfaces({ size = 400, res = 0.5, trails = [], pads = [], 
     /** Surface name at a point. */
     surfaceAt: (x, z) => SURFACE_NAMES[ids[index(x, z)]],
     /** Metres inside the nearest road/pad (negative = outside, clamped ±SDF_RANGE). */
-    insideAt: (x, z) => inside[index(x, z)],
+    insideAt: (x, z) => inside[index(x, z)] / Q,
   };
 }

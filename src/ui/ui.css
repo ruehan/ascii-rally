@@ -141,3 +141,29 @@
 /* Perf overlay (F3) */
 .ui-perf { top: 44px; left: 50%; transform: translateX(-50%); margin-top: 48px; background: var(--ui-bg); border: 1px solid var(--ui-line); padding: 4px 10px; font-size: 11px; color: var(--ui-accent); z-index: 5; }
 .ui-perf[hidden] { display: none; }
+
+/* Settings menu + gear button */
+.ui-gear {
+  position: fixed; top: 4px; right: 8px; z-index: 6; width: 26px; height: 24px;
+  background: var(--ui-bg); color: var(--ui-dim); border: 1px solid var(--ui-line);
+  font: 14px ui-monospace, Menlo, monospace; cursor: pointer; padding: 0;
+}
+.ui-gear:hover { color: var(--ui-accent); border-color: var(--ui-accent); }
+.ui-top { padding-right: 44px; }
+.ui-settings {
+  top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 8; pointer-events: auto; white-space: normal;
+  width: min(520px, calc(100vw - 28px)); background: rgba(10, 13, 14, 0.96); border: 1px solid var(--ui-line); padding: 14px 18px;
+}
+.ui-settings[hidden] { display: none; }
+.ui-settings h2 { font: inherit; color: var(--ui-accent); margin: 0 0 10px; }
+.ui-settings .row { display: flex; align-items: center; gap: 12px; padding: 3px 6px; border-left: 2px solid transparent; }
+.ui-settings .row.sel { border-left-color: var(--ui-accent); background: rgba(93, 255, 138, 0.05); }
+.ui-settings .k { width: 96px; color: var(--ui-dim); flex: none; }
+.ui-settings .opts { display: flex; flex-wrap: wrap; gap: 4px; }
+.ui-settings button {
+  background: none; border: 1px solid var(--ui-line); color: var(--ui-text);
+  font: inherit; padding: 1px 8px; cursor: pointer;
+}
+.ui-settings button.on { border-color: var(--ui-accent); color: var(--ui-accent); }
+.ui-settings button:hover { border-color: var(--ui-warn); }
+.ui-settings .foot { color: var(--ui-dim); margin-top: 10px; font-size: 11px; }

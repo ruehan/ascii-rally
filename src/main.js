@@ -24,6 +24,14 @@ import { buildMapGrid } from './ui/mapGrid.js';
 import { createMapUI } from './ui/map.js';
 import { createPerfOverlay } from './ui/perf.js';
 import { t, i18n, zoneName } from './ui/i18n.js';
+import { settings } from './ui/settings.js';
+import { createSettingsMenu } from './ui/settingsMenu.js';
+import { createBoot } from './ui/boot.js';
+import { TIERS, guessTier, createAutoQuality } from './render/quality.js';
+
+// Boot screen is already up (index.html); let it paint before the heavy build.
+const boot = createBoot();
+await new Promise(r => requestAnimationFrame(() => setTimeout(r, 0)));
 
 // --- Renderer -------------------------------------------------------------
 const renderer = new THREE.WebGLRenderer({ antialias: false });
@@ -35,7 +43,9 @@ document.getElementById('app').appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 200);
-const ascii = new AsciiRenderer(renderer, { cellSize: 6 });
+const ascii = new AsciiRenderer(renderer, { cellSize: settings.get('glyph') });
+ascii.setColor(settings.get('colour'));
+ascii.setEdges(settings.get('edges'));
 
 // --- World + physics ------------------------------------------------------
 const world = buildWorld(scene, map);
@@ -110,25 +120,24 @@ function respawn(at = safe) {
 }
 
 // --- Input ----------------------------------------------------------------
-input.onPress('KeyC', () => ascii.toggleColor());
-// Outlines: off by default, the choice persists.
-const EDGES = 'stage~/edges';
-try { if (localStorage.getItem(EDGES) === '1') ascii.toggleEdges(); } catch { /* default off */ }
-input.onPress('KeyG', () => {
-  const on = ascii.toggleEdges();
-  try { localStorage.setItem(EDGES, on ? '1' : '0'); } catch { /* not persisted */ }
-  ui.note(t('note.edges', { on }));
-});
+// Shortcuts go through settings (persisted; the settings menu shows the same state).
+input.onPress('KeyC', () => settings.toggle('colour'));
+input.onPress('KeyG', () => ui.note(t('note.edges', { on: settings.toggle('edges') })));
 input.onPress('KeyL', () => i18n.toggle());
 input.onPress('KeyH', () => ui.toggleHelp());
-input.onPress(['Equal', 'NumpadAdd'], () => ascii.setCellSize(Math.min(24, ascii.cellSize + 2)));
-input.onPress(['Minus', 'NumpadSubtract'], () => ascii.setCellSize(Math.max(6, ascii.cellSize - 2)));
+input.onPress('KeyO', () => settingsMenu.toggle());
+input.onPress(['Equal', 'NumpadAdd'], () => settings.set('glyph', Math.min(24, settings.get('glyph') + 2)));
+input.onPress(['Minus', 'NumpadSubtract'], () => settings.set('glyph', Math.max(6, settings.get('glyph') - 2)));
 input.onPress('KeyR', () => { ui.close(); respawn(world.spawn); });
 input.onPress('KeyQ', () => selectCar(CAR_ORDER[(CAR_ORDER.indexOf(carId) + 1) % CAR_ORDER.length]));
 input.onPress('KeyE', () => { if (!mapUI.isOpen && !ui.close()) zones.open(); });
-input.onPress('Escape', () => { if (!mapUI.close()) ui.close(); });
-input.onPress('KeyV', () => ui.note(t('note.camera', { mode: rig.toggleMode() })));
-input.onPress('KeyN', () => ui.note(t('note.sound', { on: !audio.toggleMute() })));
+// Esc closes whatever is open; with nothing open it opens the settings.
+input.onPress('Escape', () => { if (!mapUI.close() && !ui.close()) settingsMenu.open(); });
+input.onPress('KeyV', () => {
+  settings.set('camera', settings.get('camera') === 'chase' ? 'top' : 'chase');
+  ui.note(t('note.camera', { mode: settings.get('camera') }));
+});
+input.onPress('KeyN', () => ui.note(t('note.sound', { on: settings.toggle('sound') })));
 input.onPress('KeyT', () => {
   if (loop24.state === 'running') return ui.note(t('note.time24'));
   preset = (preset + 1) % PRESETS.length;
@@ -220,6 +229,40 @@ const mapUI = createMapUI({
 });
 input.onPress('KeyM', () => mapUI.toggle());
 
+// --- Settings + quality ---------------------------------------------------------
+const settingsMenu = createSettingsMenu({
+  onOpenChange: open => {
+    if (open) { ui.close(); mapUI.close(); }
+    input.enabled = !open;
+  },
+  toggleHelp: () => ui.toggleHelp(),
+  getQuality: () => quality.tier,
+});
+function applyTier(tier) {
+  const q = TIERS[tier];
+  lighting.setShadowSize(q.shadow);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, q.dpr));
+  resize();
+}
+const quality = createAutoQuality({
+  start: settings.get('quality') === 'auto' ? guessTier() : settings.get('quality'),
+  onStep: tier => { applyTier(tier); ui.note(t('note.quality', { tier })); settingsMenu.refresh(); },
+});
+rig.setMode(settings.get('camera'));
+audio.setMuted(!settings.get('sound'));
+settings.onChange((key, v) => {
+  if (key === 'glyph') ascii.setCellSize(v);
+  else if (key === 'colour') ascii.setColor(v);
+  else if (key === 'edges') ascii.setEdges(v);
+  else if (key === 'camera') rig.setMode(v);
+  else if (key === 'sound') audio.setMuted(!v);
+  else if (key === 'quality') {
+    const tier = v === 'auto' ? guessTier() : v;
+    quality.reset(tier);
+    applyTier(tier);
+  }
+});
+
 // --- Resize ---------------------------------------------------------------
 function resize() {
   const w = window.innerWidth;
@@ -230,7 +273,7 @@ function resize() {
   ascii.setSize(w, h);
 }
 window.addEventListener('resize', resize);
-resize();
+applyTier(quality.tier); // also sizes everything
 respawn(world.spawn);
 // Return visits: don't pop the welcome panel open on the spawn pad (E still opens it).
 if (!ui.firstVisit) zones.skipAutoOpen();
@@ -272,6 +315,7 @@ const loop = createLoop({
   },
   render(alpha, dt) {
     perf.begin();
+    if (settings.get('quality') === 'auto') quality.frame(dt);
     car.sync(vehicle, alpha, dt);
     rig.update(dt, car.object, vehicle);
     // Time of day: ease toward the target hour along the shorter way round the clock.
@@ -306,6 +350,13 @@ const loop = createLoop({
 
 loop.onUpdate((dt, t) => world.update(dt, t, look));
 loop.start();
+
+// First frame is up: drop the boot screen (first visit: wait for "start").
+input.enabled = false;
+requestAnimationFrame(() => requestAnimationFrame(async () => {
+  await boot.ready({ ask: ui.firstVisit });
+  if (!ui.panelOpen && !mapUI.isOpen && !settingsMenu.isOpen) input.enabled = true;
+}));
 
 // Dev-only handle for debugging / screenshots from the console.
 if (import.meta.env.DEV) {

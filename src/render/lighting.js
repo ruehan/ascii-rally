@@ -26,7 +26,7 @@ export function createLighting(scene) {
 
   const toLight = new THREE.Vector3(20, 35, 10).normalize(); // direction towards the light
   const dir = new THREE.Vector3(), right = new THREE.Vector3(), up = new THREE.Vector3();
-  const texel = (SHADOW_EXTENT * 2) / SHADOW_MAP;
+  let texel = (SHADOW_EXTENT * 2) / SHADOW_MAP;
   const snapped = new THREE.Vector3();
 
   function setDirection(v) {
@@ -66,5 +66,18 @@ export function createLighting(scene) {
     }
   }
 
-  return { sun, follow, setTime };
+  /**
+   * Shadow map resolution; 0 turns sun shadows off (quality tiers). Turning
+   * them on/off recompiles shaders once, so it's only done on tier changes.
+   */
+  function setShadowSize(size) {
+    sun.castShadow = size > 0;
+    if (!size || sun.shadow.mapSize.x === size) return;
+    sun.shadow.map?.dispose();
+    sun.shadow.map = null;
+    sun.shadow.mapSize.set(size, size);
+    texel = (SHADOW_EXTENT * 2) / size;
+  }
+
+  return { sun, follow, setTime, setShadowSize };
 }
