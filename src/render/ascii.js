@@ -502,6 +502,11 @@ export class AsciiRenderer {
     u.pastel.value = look.pastel;
     u.edgeGain.value = look.edgeGain;
     u.background.value.copy(look.fog).multiplyScalar(0.8);
+    // Hatching marks cast shadows, which only exist in real sunlight: it
+    // fades out towards dusk, otherwise all dark ground (dusk, night) would
+    // be hatched.
+    const t = Math.min(1, Math.max(0, (look.sunI - 1.8) / 0.6));
+    u.hatchLevel.value = 0.45 * t * t * (3 - 2 * t);
   }
 
   setColor(on) { this.material.uniforms.colorMode.value = on ? 1 : 0; }
