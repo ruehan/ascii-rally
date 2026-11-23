@@ -10,7 +10,8 @@ import * as THREE from 'three';
  * the view, look a little ahead, and lift when terrain would block the car.
  */
 const MODES = {
-  chase: { dist: 13, height: 8.5, ahead: 7, yawRate: 3.5 },
+  // Same height/distance/angle as the top view — only the yaw follows the car.
+  chase: { dist: 16, height: 16, ahead: 6, yawRate: 3.5 },
   top: { dist: 16, height: 16, ahead: 6, yawRate: 0 },
 };
 
