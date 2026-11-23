@@ -136,8 +136,7 @@ const fragmentShader = /* glsl */ `
   uniform float cameraFar;
   uniform float fogNear;
   uniform float fogFar;
-
-  vec2 cells;
+  uniform vec2 cells;          // cell grid size (cols, rows)
 
   vec2 cellUv(vec2 cell) { return (cell + 0.5) / cells; }
 
@@ -150,10 +149,10 @@ const fragmentShader = /* glsl */ `
     return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
   }
 
+  // Runs once per CELL (render target is cols × rows). Two variants:
+  // default writes tint.rgb + glyph index; OUT_BG writes the cell background.
   void main() {
-    vec2 frag = gl_FragCoord.xy;
-    cells = ceil(resolution / cellSize);
-    vec2 cell = floor(frag / cellSize);
+    vec2 cell = floor(gl_FragCoord.xy);
     vec2 uv = cellUv(cell);
 
     // Scene target is 2x the cell grid, so a linear sample at the cell
@@ -221,12 +220,6 @@ const fragmentShader = /* glsl */ `
       }
     }
 
-    // Look up glyph in grid atlas (canvas is flipped: row 0 at top).
-    vec2 inCell = fract(frag / cellSize);
-    vec2 g = vec2(mod(idx, atlasCols), floor(idx / atlasCols));
-    vec2 guv = vec2((g.x + inCell.x) / atlasCols, (atlasRows - 1.0 - g.y + inCell.y) / atlasRows);
-    float glyph = texture2D(tGlyphs, guv).r;
-
     // Glyph density carries brightness, so normalise colour to full hue.
     float peak = max(max(col.r, col.g), max(col.b, 1e-3));
     vec3 hue = col / peak;
@@ -236,8 +229,36 @@ const fragmentShader = /* glsl */ `
 
     // Lit cells get a faint wash of their colour behind the glyph; empty
     // (dark) cells stay pure background so the terminal look survives.
-    vec3 cellBg = background + tint * cellFill * smoothstep(0.03, 0.6, lum);
-    gl_FragColor = vec4(mix(cellBg, tint, glyph), 1.0);
+    #ifdef OUT_BG
+      gl_FragColor = vec4(background + tint * cellFill * smoothstep(0.03, 0.6, lum), 1.0);
+    #else
+      gl_FragColor = vec4(tint, idx / 255.0);
+    #endif
+  }
+`;
+
+// Per-pixel pass: only looks the cell up and draws its glyph.
+const finalShader = /* glsl */ `
+  uniform sampler2D tCell;     // rgb = glyph colour, a = glyph index / 255
+  uniform sampler2D tCellBg;   // rgb = cell background
+  uniform sampler2D tGlyphs;
+  uniform vec2 cells;
+  uniform float cellSize;
+  uniform float atlasCols;
+  uniform float atlasRows;
+  void main() {
+    vec2 frag = gl_FragCoord.xy;
+    vec2 cell = floor(frag / cellSize);
+    vec2 uv = (cell + 0.5) / cells;
+    vec4 a = texture2D(tCell, uv);
+    vec3 bg = texture2D(tCellBg, uv).rgb;
+    float idx = floor(a.a * 255.0 + 0.5);
+    // Look up glyph in grid atlas (canvas is flipped: row 0 at top).
+    vec2 inCell = fract(frag / cellSize);
+    vec2 g = vec2(mod(idx, atlasCols), floor(idx / atlasCols));
+    vec2 guv = vec2((g.x + inCell.x) / atlasCols, (atlasRows - 1.0 - g.y + inCell.y) / atlasRows);
+    float glyph = texture2D(tGlyphs, guv).r;
+    gl_FragColor = vec4(mix(bg, a.rgb, glyph), 1.0);
   }
 `;
 
@@ -285,6 +306,8 @@ export class AsciiRenderer {
     }
     const edgeStart = glyphs.length;
     glyphs.push(...EDGE_GLYPHS);
+    // The cell pass stores the glyph index in one 8-bit channel.
+    if (glyphs.length > 255) throw new Error(`glyph atlas has ${glyphs.length} glyphs; max 255`);
     this._glyphs = glyphs;
     this._atlasPx = 0;
     const atlas = createGlyphAtlas(glyphs, GLYPH_PX);
@@ -322,6 +345,33 @@ export class AsciiRenderer {
         cameraFar: { value: 200 },
         fogNear: { value: 1e4 },
         fogFar: { value: 1e5 },
+        cells: { value: new THREE.Vector2(1, 1) },
+      },
+      depthTest: false,
+      depthWrite: false,
+    });
+    // Same per-cell shader, writing the cell background instead (shared uniforms).
+    this.bgMaterial = new THREE.ShaderMaterial({
+      vertexShader, fragmentShader, uniforms: this.material.uniforms,
+      defines: { OUT_BG: '' }, depthTest: false, depthWrite: false,
+    });
+
+    // Cell-resolution targets: the expensive work runs once per cell.
+    const cellOpts = { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: false };
+    this.cellTarget = new THREE.WebGLRenderTarget(1, 1, cellOpts);
+    this.cellBgTarget = new THREE.WebGLRenderTarget(1, 1, cellOpts);
+    const u = this.material.uniforms;
+    this.finalMaterial = new THREE.ShaderMaterial({
+      vertexShader,
+      fragmentShader: finalShader,
+      uniforms: {
+        tCell: { value: this.cellTarget.texture },
+        tCellBg: { value: this.cellBgTarget.texture },
+        tGlyphs: u.tGlyphs,       // shared uniform objects: atlas swaps propagate
+        cells: u.cells,
+        cellSize: u.cellSize,
+        atlasCols: u.atlasCols,
+        atlasRows: u.atlasRows,
       },
       depthTest: false,
       depthWrite: false,
@@ -329,7 +379,8 @@ export class AsciiRenderer {
 
     this.quadScene = new THREE.Scene();
     this.quadCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-    this.quadScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.material));
+    this.quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.material);
+    this.quadScene.add(this.quad);
 
     this._scene = null;
     this._meshes = [];      // meshes to swap in the info pass
@@ -357,6 +408,10 @@ export class AsciiRenderer {
     const th = Math.ceil(bh / cell) * 2;
     this.target.setSize(tw, th);
     this.infoTarget.setSize(tw, th);
+    const cols = Math.ceil(bw / cell), rows = Math.ceil(bh / cell);
+    this.material.uniforms.cells.value.set(cols, rows);
+    this.cellTarget.setSize(cols, rows);
+    this.cellBgTarget.setSize(cols, rows);
   }
 
   /** Re-renders the glyph atlas when the on-screen cell size changes. */
@@ -470,7 +525,14 @@ export class AsciiRenderer {
     scene.fog = fog;
     r.shadowMap.autoUpdate = shadowAuto;
 
-    // 3) ASCII composite to screen.
+    // 3) Per-cell glyph + colours (tiny targets), then 4) per-pixel glyph draw.
+    this.quad.material = this.material;
+    r.setRenderTarget(this.cellTarget);
+    r.render(this.quadScene, this.quadCamera);
+    this.quad.material = this.bgMaterial;
+    r.setRenderTarget(this.cellBgTarget);
+    r.render(this.quadScene, this.quadCamera);
+    this.quad.material = this.finalMaterial;
     r.setRenderTarget(null);
     r.render(this.quadScene, this.quadCamera);
   }

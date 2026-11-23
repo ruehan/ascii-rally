@@ -288,7 +288,20 @@ loop.start();
 // Dev-only handle for debugging / screenshots from the console.
 if (import.meta.env.DEV) {
   window.__stage = {
-    physics, vehicle, terrain, surfaces, stages, zones, renderer, loop24,
+    physics, vehicle, terrain, surfaces, stages, zones, renderer, loop24, ascii, scene, camera,
+    /** GPU-synced render timing (ms per frame) for comparing renderer changes. */
+    benchRender(n = 40) {
+      const gl = renderer.getContext();
+      const px = new Uint8Array(4);
+      ascii.render(scene, camera);
+      gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      const t0 = performance.now();
+      for (let i = 0; i < n; i++) {
+        ascii.render(scene, camera);
+        gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      }
+      return (performance.now() - t0) / n;
+    },
     setPreset(i) { preset = i; },
     teleport(x, z, heading = 0) { respawn({ pos: [x, z], heading }); },
     /** Force intents ({throttle, brake, steer}) or null to hand control back. */
