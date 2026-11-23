@@ -22,6 +22,7 @@ import { sampleTime } from './render/timeOfDay.js';
 import { milestones } from './content/content.js';
 import { buildMapGrid } from './ui/mapGrid.js';
 import { createMapUI } from './ui/map.js';
+import { createPerfOverlay } from './ui/perf.js';
 
 // --- Renderer -------------------------------------------------------------
 const renderer = new THREE.WebGLRenderer({ antialias: false });
@@ -214,6 +215,7 @@ respawn(world.spawn);
 
 // --- Loop -----------------------------------------------------------------
 const carFocus = new THREE.Vector3();
+const perf = createPerfOverlay(renderer);
 let devIntents = null; // dev-only override (see window.__stage.drive)
 
 const loop = createLoop({
@@ -247,6 +249,7 @@ const loop = createLoop({
     }
   },
   render(alpha, dt) {
+    perf.begin();
     car.sync(vehicle, alpha, dt);
     rig.update(dt, car.object, vehicle);
     // Time of day: ease toward the target hour along the shorter way round the clock.
@@ -275,6 +278,7 @@ const loop = createLoop({
     navNote(nav, dt);
     ui.update({ vehicle, place: place(), zone: zones.current, nav, viewYaw: rig.yaw, loop: loop24, dt });
     mapUI.update(dt, vehicle);
+    perf.end(dt);
   },
 });
 

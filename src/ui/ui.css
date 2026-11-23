@@ -134,3 +134,7 @@
 .ui-panel .car-card button { background: none; border: 0; color: var(--ui-warn); font: inherit; cursor: pointer; padding: 0; }
 .ui-panel .car-card .k { color: var(--ui-dim); }
 .ui-panel .car-card .spec { color: var(--ui-dim); font-size: 12px; }
+
+/* Perf overlay (F3) */
+.ui-perf { top: 44px; left: 50%; transform: translateX(-50%); margin-top: 48px; background: var(--ui-bg); border: 1px solid var(--ui-line); padding: 4px 10px; font-size: 11px; color: var(--ui-accent); z-index: 5; }
+.ui-perf[hidden] { display: none; }
