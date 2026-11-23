@@ -167,7 +167,6 @@ const fragmentShader = /* glsl */ `
   uniform float fogFar;
   uniform vec2 cells;          // cell grid size (cols, rows)
   uniform mat4 invViewProj;    // NDC → world, for world-anchored dithering
-  uniform float hatchLevel;    // ground darker than this is hatched (0 = off)
   uniform float airAmount;     // aerial perspective strength
 
   vec2 cellUv(vec2 cell) { return (cell + 0.5) / cells; }
@@ -207,7 +206,12 @@ const fragmentShader = /* glsl */ `
     // the pattern sticks to the ground instead of swimming as the camera moves.
     vec4 wp = invViewProj * vec4(uv * 2.0 - 1.0, texture2D(tDepth, uv).x * 2.0 - 1.0, 1.0);
     vec2 wxz = wp.xz / wp.w;
-    float l = clamp(lum * setDensity[set] + (hash(floor(wxz * 3.0)) - 0.5) * dither / len, 0.0, 0.999);
+    // Ground keeps its glyph texture in shade: the glyph comes from a
+    // compressed brightness and the darkness is carried by colour instead
+    // (shade by colour, below), so shadows are darker, not emptier or patterned.
+    bool soft = aByte >= 64.0;
+    float gl = soft ? mix(lum, 0.55, 0.65) : lum;
+    float l = clamp(gl * setDensity[set] + (hash(floor(wxz * 3.0)) - 0.5) * dither / len, 0.0, 0.999);
     float idx = start + min(floor(l * len), len - 1.0);
 
     // --- Edge detection: Sobel over neighbouring cells on depth + normals,
@@ -260,20 +264,11 @@ const fragmentShader = /* glsl */ `
       }
     }
 
-    // Shade hatching: dark ground (cast shadows, slopes turned away) is drawn
-    // as pen hatching instead of a dark empty block. Strokes run on the cell
-    // grid's diagonals ('/' in cells with equal col − row), so neighbouring
-    // strokes join into continuous lines. Darker = denser lines.
-    bool soft = aByte >= 64.0 && aByte < 128.0;
-    if (edge == 0.0 && soft && lum < hatchLevel) {
-      float spacing = lum < hatchLevel * 0.6 ? 3.0 : 4.0;
-      idx = mod(cell.x - cell.y, spacing) < 0.5 ? edgeStart + 3.0 : start; // '/' or blank
-    }
-
     // Glyph density carries brightness, so normalise colour to full hue.
     float peak = max(max(col.r, col.g), max(col.b, 1e-3));
     vec3 hue = col / peak;
     vec3 tint = mix(monoColor, mix(hue, vec3(1.0), pastel), colorMode);
+    if (soft && edge == 0.0) tint *= clamp(0.25 + 1.1 * lum, 0.25, 1.0); // shade by colour
     // Aerial perspective: farther cells fade toward the air colour (less
     // saturated, less contrast), so depth reads in a top-down view.
     float air = smoothstep(32.0, 110.0, linearDepth(uv)) * airAmount;
@@ -407,7 +402,6 @@ export class AsciiRenderer {
         fogFar: { value: 1e5 },
         cells: { value: new THREE.Vector2(1, 1) },
         invViewProj: { value: new THREE.Matrix4() },
-        hatchLevel: { value: 0.45 },
         airAmount: { value: 0.6 },
       },
       depthTest: false,
@@ -502,11 +496,6 @@ export class AsciiRenderer {
     u.pastel.value = look.pastel;
     u.edgeGain.value = look.edgeGain;
     u.background.value.copy(look.fog).multiplyScalar(0.8);
-    // Hatching marks cast shadows, which only exist in real sunlight: it
-    // fades out towards dusk, otherwise all dark ground (dusk, night) would
-    // be hatched.
-    const t = Math.min(1, Math.max(0, (look.sunI - 1.8) / 0.6));
-    u.hatchLevel.value = 0.45 * t * t * (3 - 2 * t);
   }
 
   setColor(on) { this.material.uniforms.colorMode.value = on ? 1 : 0; }
