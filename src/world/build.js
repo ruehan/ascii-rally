@@ -1053,8 +1053,13 @@ export function buildWorld(scene, map) {
       if (boxClear(px, pz, 24, 14, 0, 1)) {
         const { lo } = footprint(px, pz, 12, 7, 0);
         put(G.block(), '#f3f5f7', CHARSET.WALL, px, lo - 0.4, pz, 24, 8.4, 14, { cut: true });
-        put(G.block(), '#d9dee3', CHARSET.WALL, px, lo + 8, pz, 24.4, 0.4, 14.4, { cut: true });
-        for (const dx of [-7, 0, 7]) put(G.cylinder(), '#b9c0c8', CHARSET.WALL, px + dx, lo + 8.4, pz, 0.9, 1.6, 0.9);
+        put(G.block(), '#b38cff', CHARSET.GOLD, px, lo + 6.9, pz, 24.12, 0.7, 14.12, { cut: true }); // lavender band
+        // Sawtooth roof: five teeth, each a sloped panel with a glazed north face.
+        for (let i = 0; i < 5; i++) {
+          const tx = px - 12 + 2.4 + i * 4.8;
+          put(G.block(), '#d9dee3', CHARSET.ROOF, tx, lo + 8.9, pz, 5.1, 0.25, 14.2, { rz: 0.39, cut: true });
+          put(G.block(), '#9fd0e8', CHARSET.WALL, tx + 2.35, lo + 8, pz, 0.15, 1.95, 14.0, { cut: true });
+        }
         windows(px, pz, 0, 24, 14, lo, 2, rng(77));
         solid(box(px, pz, 12, 7, 0, 8.4, lo - 0.4));
         // Belt along the plant's north face with two robot arms.
@@ -1081,6 +1086,42 @@ export function buildWorld(scene, map) {
           solid(circle(ax, az, 0.6, 3.5, by));
         }
       }
+      // Landmark: a giant cosmetic bottle (pump top) by the yard entrance.
+      {
+        const bx = mx + 14, bz = mz - 13;
+        if (isClear(bx, bz, 2.4, 1)) {
+          const by = h(bx, bz);
+          put(G.cylinder(), '#f3d7e3', CHARSET.WALL, bx, by, bz, 2.1, 6.5, 2.1, { cut: true });
+          put(G.cylinder(), '#e9b8cc', CHARSET.GOLD, bx, by + 2.2, bz, 2.15, 1.4, 2.15, { cut: true }); // label
+          put(G.cylinder(), '#f2f2f2', CHARSET.WALL, bx, by + 6.5, bz, 1.0, 1.0, 1.0);
+          put(G.cylinder(), '#d9dee3', CHARSET.WALL, bx, by + 7.5, bz, 0.35, 1.3, 0.35);
+          put(G.block(), '#d9dee3', CHARSET.WALL, bx + 0.7, by + 8.6, bz, 1.6, 0.35, 0.4);           // pump spout
+          solid(circle(bx, bz, 2.1, 9, by));
+        }
+      }
+      // ODF film line on show: two rollers on frames with a thin film between.
+      {
+        const fx = mx + 22, fz = mz + 19, fy = h(fx, fz);
+        if (boxClear(fx, fz, 12, 2.4, 0, 0.8)) {
+          for (const o of [-5.5, 5.5]) {
+            put(G.block(), '#6b7684', CHARSET.WALL, fx + o, fy, fz - 1, 0.25, 2.2, 0.25, { shadow: false });
+            put(G.block(), '#6b7684', CHARSET.WALL, fx + o, fy, fz + 1, 0.25, 2.2, 0.25, { shadow: false });
+            put(G.cylinder(), '#c9ccd2', CHARSET.WALL, fx + o, fy + 1.85, fz - 1.1, 0.45, 2.2, 0.45, { rx: Math.PI / 2 });
+          }
+          put(G.block(), '#e6f4ff', CHARSET.ICE, fx, fy + 2.25, fz, 11, 0.05, 2.0, { shadow: false }); // the film
+          solid(box(fx, fz, 6, 1.2, 0, 2.6, fy));
+        }
+      }
+      // Lamps along the plant road; a gravel path between the flower fields.
+      const film = trail('film');
+      if (film) {
+        for (let d = 10; d < film.length - 10; d += 18) {
+          const p = pointAt(film.path, film.cum, d), off = film.width / 2 + 1.6;
+          lampPost(p.x - p.tz * off, p.z + p.tx * off);
+        }
+      }
+      for (let z = 100; z <= 188; z += 3) paving(336, z, 2.4, 3.05, 0, '#b8a888', CHARSET.GRAVEL);
+
       // Film rolls stacked north of the yard.
       for (let i = 0; i < 3; i++) {
         const fx = mx - 4 + i * 4, fz = mz - 18;
@@ -1136,8 +1177,8 @@ export function buildWorld(scene, map) {
         }
       }
       // A delivery van shuttles along the plant road.
-      const film = trail('film');
-      if (film) patrol(film, { cab: '#b38cff', box: '#f3f5f7', speed: 9 });
+      const plantRoad = trail('film');
+      if (plantRoad) patrol(plantRoad, { cab: '#b38cff', box: '#f3f5f7', speed: 9 });
     }
 
     // Conveyor slats across the road on boost strips (flat, bright).
