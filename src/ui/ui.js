@@ -1,5 +1,5 @@
 import './ui.css';
-import { panels, projects, owner } from '../content/content.js';
+import { panels, projects, careers, owner } from '../content/content.js';
 import { leaderboard, formatTime } from '../game/leaderboard.js';
 import { CARS, CAR_ORDER } from '../vehicle/cars.js';
 import { t, L, i18n, zoneName, paceNote } from './i18n.js';
@@ -40,11 +40,30 @@ function timesLog(stage, car, highlight) {
   return `<div class="log">${rows.join('\n')}</div>`;
 }
 
-/** Project shown for a stage; fun stages (project: null) get a stand-in. */
+/**
+ * What a stage stands for: a career (stage.career), a project
+ * (stage.project) or nothing (a fun stage). Returns
+ * { kind, title, heading, rows: [[key, value]], summary, links }.
+ */
 function projectOf(stage) {
+  const c = careers[stage.career];
+  if (c) {
+    return {
+      kind: 'career', title: L(c.short), heading: t('result.career'),
+      rows: [[t('result.k.company'), L(c.company)], [t('result.k.role'), L(c.role)], [t('result.k.period'), L(c.period)],
+        [t('result.k.field'), L(c.field)], [t('result.k.stack'), L(c.stack)]],
+      summary: c.summary ?? [], links: c.links ?? [],
+    };
+  }
   const p = projects[stage.project];
-  if (!p) return { title: stage.title ?? stage.name, year: '', role: '', stack: '', summary: [t('fun.summary')], links: [] };
-  return { ...p, title: L(p.title), role: L(p.role) };
+  if (p) {
+    return {
+      kind: 'project', title: L(p.title), heading: t('result.project'),
+      rows: [[t('result.k.title'), L(p.title)], [t('result.k.year'), L(p.year)], [t('result.k.role'), L(p.role)], [t('result.k.stack'), L(p.stack)]],
+      summary: p.summary ?? [], links: p.links ?? [],
+    };
+  }
+  return { kind: 'fun', title: stage.title ?? stage.name, heading: null, rows: [], summary: [t('fun.summary')], links: [] };
 }
 
 /** Garage: car cards with real-world-ish specs; buttons emit car:select. */
@@ -172,10 +191,10 @@ export function createUI({ bus, stages, onPanel, getCar }) {
       <p class="big">${formatTime(time)}</p>
       <p>${verdict}${best}${penalty ? t('result.penalty', { p: penalty.toFixed(1) }) : ''}</p>
       ${renderLines([
-        { h: t('result.project') },
-        { k: t('result.k.title'), v: p.title }, { k: t('result.k.year'), v: p.year }, { k: t('result.k.role'), v: p.role }, { k: t('result.k.stack'), v: p.stack },
-        ...(p.summary ?? []),
-        ...(p.links ?? []),
+        ...(p.heading ? [{ h: p.heading }] : []),
+        ...p.rows.map(([k, v]) => ({ k, v })),
+        ...p.summary,
+        ...p.links,
         { h: t('result.times') },
       ])}
       ${timesLog(stage, car, rec.entry.hash)}`);
@@ -192,8 +211,8 @@ export function createUI({ bus, stages, onPanel, getCar }) {
   // --- Bus ---------------------------------------------------------------------------
   bus.on('loop:start', () => { close(); note(t('loop.start')); });
   bus.on('loop:milestone', ({ milestone: m }) => {
-    note(`> ${m.year} · ${L(m.title)}`);
-    showCard(`${m.year} · ${L(m.title)}`, [m.text]);
+    note(`> ${L(m.year)} · ${L(m.title)}`);
+    showCard(`${L(m.year)} · ${L(m.title)}`, [m.text]);
   });
   bus.on('loop:finish', () => { note(t('loop.finish')); showCard(t('loop.card'), [t('loop.cardText')]); });
   bus.on('loop:pause', () => note(t('loop.pause')));
@@ -227,7 +246,7 @@ export function createUI({ bus, stages, onPanel, getCar }) {
     if (stages.state === 'running') {
       const st = stages.active;
       const delta = lastSplit === null ? '' : `${sep}<span class="${lastSplit <= 0 ? 'good' : 'bad'}">${lastSplit <= 0 ? '▼' : '▲'} ${lastSplit.toFixed(1)}</span>`;
-      top.innerHTML = `<span class="prompt">${esc(st.name)}</span>${sep}<span class="opt">${st.project ? '/projects/' : '/stages/'}${esc(projectOf(st).title)}</span>${sep}${formatTime(stages.time)}${delta}${sep}${kmh} km/h${sep}<span class="opt">${alt}</span><span class="right">${Math.round(stages.progress * 100)}%</span>`;
+      top.innerHTML = `<span class="prompt">${esc(st.name)}</span>${sep}<span class="opt">/${({ career: 'career', project: 'projects', fun: 'stages' })[projectOf(st).kind]}/${esc(projectOf(st).title)}</span>${sep}${formatTime(stages.time)}${delta}${sep}${kmh} km/h${sep}<span class="opt">${alt}</span><span class="right">${Math.round(stages.progress * 100)}%</span>`;
     } else if (loop && loop.state === 'running') {
       const hh = Math.floor(loop.hour), mm = Math.floor((loop.hour - hh) * 60);
       const clock = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;

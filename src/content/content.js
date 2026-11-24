@@ -41,16 +41,62 @@ export const projects = {
 };
 
 /**
+ * Careers: each has its own region and stage in the world (stage config
+ * `career: '<id>'`); finishing the stage shows this card. Text is plain or
+ * { en, ko }.
+ */
+export const careers = {
+  keti: {
+    company: { en: 'Korea Electronics Technology Institute (KETI)', ko: '한국전자기술연구원(KETI)' },
+    short: 'KETI',
+    role: { en: 'Researcher', ko: '연구원' },
+    period: '2021.10 – 2023.03',
+    field: { en: 'Healthcare · wearable watch', ko: '헬스케어 · 웨어러블 워치' },
+    summary: [
+      { en: 'Research and development on a healthcare wearable (watch).', ko: '헬스케어 웨어러블(워치) 연구 개발.' },
+      { en: 'TODO: what you built, measured or shipped.', ko: 'TODO: 만든 것, 측정한 것, 성과.' },
+    ],
+    stack: 'TODO',
+    links: [],
+  },
+  zeroone: {
+    company: { en: 'Zero One Co., Ltd.', ko: '주식회사 제로원' },
+    short: { en: 'Zero One', ko: '제로원' },
+    role: { en: 'SW Team Lead', ko: 'SW팀장' },
+    period: '2025.04 – 2026.10',
+    field: { en: 'Food-waste reducers · collection service', ko: '음식물 감량기 · 수거 서비스' },
+    summary: [
+      { en: 'Built the company\'s overall software system: reducer machines and the collection service.', ko: '감량기와 음식물 수거 서비스를 아우르는 전반적인 시스템 구축.' },
+      { en: 'TODO: team, architecture, results.', ko: 'TODO: 팀, 구조, 성과.' },
+    ],
+    stack: 'TODO',
+    links: [],
+  },
+  moisten: {
+    company: { en: 'Moisten Co., Ltd.', ko: '(주)모이스텐' },
+    short: { en: 'Moisten', ko: '모이스텐' },
+    role: { en: 'Developer (AI & DX System Manager)', ko: '개발자 (AI & DX System Manager)' },
+    period: { en: '2026.11 – now', ko: '2026.11 – 현재' },
+    field: { en: 'Cosmetics · ODF film', ko: '화장품 · ODF 필름' },
+    summary: [
+      { en: 'Building company-wide systems and automation (AI & DX).', ko: '전반적인 시스템 구축 및 자동화 (AI & DX).' },
+      { en: 'TODO: current focus.', ko: 'TODO: 지금 집중하는 일.' },
+    ],
+    stack: 'TODO',
+    links: [],
+  },
+};
+
+/**
  * Career milestones along the 24H loop, in order (first = afternoon start,
  * last = back to the paddock next day). `at` (0..1 of the lap) is optional.
  */
 export const milestones = [
   { year: 'TODO', title: { en: 'First line of code', ko: '첫 코드 한 줄' }, text: { en: 'TODO: where it started.', ko: 'TODO: 어디서 시작했는지.' } },
-  { year: 'TODO', title: { en: 'Studies', ko: '공부' }, text: { en: 'TODO: school / degree / self-taught.', ko: 'TODO: 학교 / 전공 / 독학.' } },
-  { year: 'TODO', title: { en: 'First job', ko: '첫 직장' }, text: { en: 'TODO: company, role.', ko: 'TODO: 회사, 역할.' } },
-  { year: 'TODO', title: { en: 'The long night', ko: '긴 밤' }, text: { en: 'TODO: the hard project that taught the most.', ko: 'TODO: 가장 많이 배운 힘든 프로젝트.' } },
-  { year: 'TODO', title: { en: 'Levelling up', ko: '레벨 업' }, text: { en: 'TODO: next role / big launch.', ko: 'TODO: 다음 역할 / 큰 출시.' } },
-  { year: 'TODO', title: { en: 'Now', ko: '지금' }, text: { en: 'TODO: what you are doing today.', ko: 'TODO: 요즘 하고 있는 일.' } },
+  { year: '2021.10', title: { en: 'Researcher · KETI', ko: 'KETI 연구원' }, text: careers.keti.field },
+  { year: '2025.04', title: { en: 'SW Team Lead · Zero One', ko: '제로원 SW팀장' }, text: careers.zeroone.field },
+  { year: '2026.11', title: { en: 'AI & DX · Moisten', ko: '모이스텐 AI & DX' }, text: careers.moisten.field },
+  { year: { en: 'NOW', ko: '지금' }, title: { en: 'Next stage loading', ko: '다음 스테이지 준비 중' }, text: { en: 'Back at the paddock.', ko: '다시 패독으로.' } },
 ];
 
 /** Zone panels (ids used in map.js zones[].content). */
@@ -61,11 +107,13 @@ export const panels = {
       { en: `Welcome to ${owner.name}'s rally season.`, ko: `${owner.name}의 랠리 시즌에 오신 걸 환영합니다.` },
       { en: 'Drive to a pad and stop (or press E) to open it.', ko: '패드로 가서 멈추면(또는 E) 열립니다.' },
       { en: 'H shows the controls · L switches language · M opens the map.', ko: 'H 조작법 보기 · L 언어 바꾸기 · M 지도 열기.' },
-      { h: { en: 'SPECIAL STAGES = PROJECTS', ko: '스페셜 스테이지 = 프로젝트' } },
+      { h: { en: 'CAREER STAGES', ko: '경력 스테이지' } },
+      { en: 'Each job has its own region and stage; finish it to open the card.', ko: '경력마다 지역과 스테이지가 있어요. 완주하면 경력 카드가 열립니다.' },
       { en: 'Stop in a start box, wait for 3-2-1, drive to the finish.', ko: '출발 박스에 멈추고 3-2-1 뒤 피니시까지 달리세요.' },
+      { h: { en: 'SPECIAL STAGES', ko: '스페셜 스테이지' } },
       { en: 'SS1–SS5 home roads · SS6 circuit · SS7–SS10 mountains, snow, desert', ko: 'SS1–SS5 홈 도로 · SS6 서킷 · SS7–SS10 산악·눈길·사막' },
       { en: 'SS11–SS13 coast, the long straight, vineyards', ko: 'SS11–SS13 해안, 롱 스트레이트, 포도밭' },
-      { h: { en: '24H = CAREER', ko: '24H = 경력' } },
+      { h: { en: '24H = TIMELINE', ko: '24H = 연대기' } },
       { en: 'Start at the 24H gate by the circuit and follow the loop home.', ko: '서킷 옆 24H 게이트에서 출발해 한 바퀴 돌아 집으로.' },
       { en: 'The clock runs from afternoon through the night; milestones line the way.', ko: '오후부터 밤을 지나 시계가 흐르고, 길가에 이정표가 있습니다.' },
       { h: { en: 'ALSO ON THE MAP', ko: '지도에 더 있는 것' } },

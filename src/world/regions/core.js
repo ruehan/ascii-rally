@@ -69,15 +69,15 @@ export default {
     { id: 'skidpad', title: 'SKIDPAD', path: '~/skidpad', content: null, pos: [46, -76], r: 25, surface: 'asphalt' },
   ],
 
-  // Special stages = projects. Ranges are metres along a trail (driven in
+  // Special stages (SS1 = this site; careers have their own regions). Ranges are metres along a trail (driven in
   // increasing direction). target = the owner's time per car class (seconds;
   // missing = no target, e.g. slicks on gravel).
   stages: [
     { id: 'ss1', name: 'SS1', trail: 'forest', from: 25, to: 250, splits: [100, 185], project: 'p1', hue: '#ffd166', target: { rally: 17.5, gt: 27, trail: 20.5 } },
-    { id: 'ss2', name: 'SS2', trail: 'town', from: 40, to: 305, splits: [120, 220], project: 'p2', hue: '#ff6b6b', target: { rally: 21, formula: 23.5, hypercar: 23, gt: 22, trail: 23.5 } },
-    { id: 'ss3', name: 'SS3', trail: 'coast', from: 222, to: 395, splits: [280, 340], project: 'p3', hue: '#4dabf7', target: { rally: 15, formula: 12.5, hypercar: 13.5, gt: 14, trail: 17.5 } },
-    { id: 'ss4', name: 'SS4', trail: 'east', from: 20, to: 340, splits: [120, 230], project: 'p4', hue: '#c77dff', target: { rally: 21, formula: 34.5, hypercar: 31, gt: 24.5, trail: 23.5 } },
-    { id: 'ss5', name: 'SS5', trail: 'valley', from: 40, to: 230, splits: [100, 165], project: 'p5', hue: '#5dff8a', target: { rally: 12, formula: 10.5, hypercar: 11, gt: 12, trail: 15.5 } },
+    { id: 'ss2', name: 'SS2', title: 'BORGO', trail: 'town', from: 40, to: 305, splits: [120, 220], project: null, hue: '#ff6b6b', target: { rally: 21, formula: 23.5, hypercar: 23, gt: 22, trail: 23.5 } },
+    { id: 'ss3', name: 'SS3', title: 'SCOGLIERA', trail: 'coast', from: 222, to: 395, splits: [280, 340], project: null, hue: '#4dabf7', target: { rally: 15, formula: 12.5, hypercar: 13.5, gt: 14, trail: 17.5 } },
+    { id: 'ss4', name: 'SS4', title: 'NOTTE', trail: 'east', from: 20, to: 340, splits: [120, 230], project: null, hue: '#c77dff', target: { rally: 21, formula: 34.5, hypercar: 31, gt: 24.5, trail: 23.5 } },
+    { id: 'ss5', name: 'SS5', title: 'VALLE', trail: 'valley', from: 40, to: 230, splits: [100, 165], project: null, hue: '#5dff8a', target: { rally: 12, formula: 10.5, hypercar: 11, gt: 12, trail: 15.5 } },
   ],
 
   // Scatter regions (rects: [minX, minZ, maxX, maxZ]).

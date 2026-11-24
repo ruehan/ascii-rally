@@ -41,7 +41,7 @@ export default {
     { id: 'race-control', title: 'RACE CONTROL', path: '~/grand-prix/race-control', content: 'hq', pos: [-150, 252], r: 12, surface: 'pad' },
   ],
   stages: [
-    { id: 'ss6', name: 'SS6', trail: 'gp', from: 15, to: -15, splits: [430, 900], project: 'p6', hue: '#ff9a3c', target: {} },
+    { id: 'ss6', name: 'SS6', title: 'GRAN PREMIO', trail: 'gp', from: 15, to: -15, splits: [430, 900], project: null, hue: '#ff9a3c', target: {} },
   ],
   scatter: [
     { kind: 'broadleaf', rect: [-300, 200, 380, 590], count: 260, seed: 61, clearance: 25 },
