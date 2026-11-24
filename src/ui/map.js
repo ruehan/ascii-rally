@@ -132,7 +132,7 @@ export function createMapUI({ fine, coarse, destinations, onTravel, onOpenChange
     `<button data-i="${destinations.indexOf(d)}"><b>${esc(d.key ?? '·')}</b> ${esc(label(d))}</button>`).join('');
   function renderText() {
     for (const { d, b } of markers) b.innerHTML = `<b>${esc(d.key ?? '·')}</b> ${esc(label(d))}`;
-    side.innerHTML = `<h2>${t('map.title')}</h2><h3>${t('map.places')}</h3>${list(group('places'))}<h3>${t('map.stages')}</h3>${list(group('stages'))}
+    side.innerHTML = `<h2>${t('map.title')}</h2><h3>${t('map.places')}</h3>${list(group('places'))}<h3>${t('map.careers')}</h3>${list(group('careers'))}<h3>${t('map.stages')}</h3>${list(group('stages'))}
       <p class="foot">${t('map.foot')}</p>`;
     side.querySelectorAll('button').forEach(b => b.addEventListener('click', () => travel(destinations[+b.dataset.i])));
   }

@@ -147,7 +147,8 @@ export function createUI({ bus, stages, onPanel, getCar }) {
     const car = getCar();
     if (zone.content === 'hq') {
       // In stage-number order; hidden stages only once they've been driven.
-      const num = st => (/\d+/.exec(st.name) ? +/\d+/.exec(st.name)[0] : 99);
+      // Careers (C1–C3) first, then SS in number order.
+      const num = st => (st.career ? -10 : 0) + (/\d+/.exec(st.name) ? +/\d+/.exec(st.name)[0] : 99);
       const list = stages.stages
         .filter(st => !st.hidden || leaderboard.get(st.id, car).length)
         .sort((a, b) => num(a) - num(b));

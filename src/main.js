@@ -199,8 +199,8 @@ const along = p => Math.atan2(-p.tx, -p.tz); // car heading that faces along a p
 const gateP = loop24.startPoint;
 const gate = { x: gateP.x - gateP.tx * 12, z: gateP.z - gateP.tz * 12, heading: along(gateP) }; // just before the line
 const zonePos = id => map.zones.find(z => z.id === id);
-// Places on number keys; stages on letters in stage order (no M: it closes
-// the map). Hidden stages stay off the map.
+// Places on 1–6, career stages on 7–9, other stages on letters in stage
+// order (no M: it closes the map). Hidden stages stay off the map.
 const STAGE_KEYS = 'abcdefghijklnopqrstuvwxyz';
 const stageNum = st => +(/\d+/.exec(st.name)?.[0] ?? 99);
 const destinations = [
@@ -210,7 +210,12 @@ const destinations = [
   { key: '4', label: () => t('place.pitwall'), x: zonePos('pitwall').pos[0], z: zonePos('pitwall').pos[1], heading: 0 },
   { key: '5', label: () => t('place.24h'), ...gate },
   { key: '6', label: () => t('place.lookout'), x: zonePos('lookout').pos[0], z: zonePos('lookout').pos[1], heading: 0 },
-  ...stages.stages.filter(st => !st.hidden).sort((a, b) => stageNum(a) - stageNum(b)).map((st, i) => ({
+  // Careers: the career stages' start boxes on 7–9.
+  ...stages.stages.filter(st => st.career).map((st, i) => ({
+    key: String(7 + i), group: 'careers', label: `${st.name} ${st.title}`.toLowerCase(),
+    x: st.start.x, z: st.start.z, heading: along(st.start),
+  })),
+  ...stages.stages.filter(st => !st.hidden && !st.career).sort((a, b) => stageNum(a) - stageNum(b)).map((st, i) => ({
     key: STAGE_KEYS[i], group: 'stages', label: `${st.name} ${st.title ?? st.trail.id}`.toLowerCase(),
     x: st.start.x, z: st.start.z, heading: along(st.start),
   })),
