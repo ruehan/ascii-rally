@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { CHARSET, setCharset } from '../render/charsets.js';
 import { material } from './materials.js';
+import { groundLight } from '../render/groundLight.js';
+import { swayUniforms } from '../render/sway.js';
 import { geometries as G } from './geometries.js';
 import { Instancer } from './instancer.js';
 import { createTerrain } from './terrain.js';
@@ -98,9 +100,19 @@ export function buildWorld(scene, map) {
   const h = (x, z) => terrain.heightAt(x, z);
   const nrm = { x: 0, y: 1, z: 0 };
 
-  const put = (geo, color, charset, x, y, z, sx, sy, sz, { yaw = 0, rx = 0, rz = 0, cut = false, shadow = true } = {}) => {
+  // Wind: foliage sways (see render/sway.js). [A, B] by shape — a canopy on
+  // a trunk moves as a whole, rooted plants keep their base still.
+  const SWAY = { canopy: [0.65, 0.35], bush: [0.5, 0.5], cone: [0, 1], row: [0, 0.55] };
+  const swayOf = (geo, charset, cut) => {
+    if (charset !== CHARSET.FOLIAGE) return null;
+    if (geo === G.ball()) return cut ? SWAY.canopy : SWAY.bush;
+    if (geo === G.cone()) return SWAY.cone;
+    if (geo === G.block()) return SWAY.row;
+    return null; // cacti stand still
+  };
+  const put = (geo, color, charset, x, y, z, sx, sy, sz, { yaw = 0, rx = 0, rz = 0, cut = false, shadow = true, sway } = {}) => {
     _m.compose(_p.set(x, y, z), _q.setFromEuler(_e.set(rx, yaw, rz)), _s.set(sx, sy, sz));
-    inst.add(geo, material(color, { cutaway: cut }), charset, _m, { castShadow: shadow });
+    inst.add(geo, material(color, { cutaway: cut, sway: sway ?? swayOf(geo, charset, cut) }), charset, _m, { castShadow: shadow });
   };
   const solid = shape => { colliders.push(shape); occupied.insert(shape); return shape; };
 
@@ -163,6 +175,11 @@ export function buildWorld(scene, map) {
     return true;
   };
 
+  // Night light pools on the ground (lamps, lit windows): baked into one
+  // world-sized texture the terrain shader adds as warm light after dusk.
+  const lightSpots = [];
+  const glow = (x, z, r, k = 1) => lightSpots.push([x, z, r, k]);
+
   // --- Buildings ---------------------------------------------------------------
   // Windows: dark glass by day; at night a share of them light up (the
   // material's glow follows the time of day, see update()).
@@ -179,6 +196,8 @@ export function buildWorld(scene, map) {
           const lit = rand() < 0.55;
           _m.compose(_p.set(px, floorY + 1.1 + f * 3, pz), _q.setFromEuler(_e.set(0, yaw, 0)), _s.set(0.9, 1.2, 0.12));
           inst.add(G.block(), lit ? windowLit : windowDark, CHARSET.GOLD, _m, { castShadow: false });
+          // Ground-floor light spills onto the street outside.
+          if (lit && f === 0) glow(px + side * s * 1.6, pz + side * c * 1.6, 3.4, 0.55);
         }
       }
     }
@@ -194,6 +213,7 @@ export function buildWorld(scene, map) {
     put(G.block(), '#3b4048', CHARSET.WALL, x, y, z, 0.16, height, 0.16, { shadow: false });
     _m.compose(_p.set(x, y + height, z), _q.identity(), _s.set(0.55, 0.22, 0.55));
     inst.add(G.block(), lampGlow, CHARSET.GOLD, _m, { castShadow: false });
+    glow(x, z, height * 1.7, 1);
     solid(circle(x, z, 0.2, height, y));
     return true;
   }
@@ -1224,7 +1244,7 @@ export function buildWorld(scene, map) {
       const ch = 4 + rand() * 4, cr = 1.3 + rand() * 0.8;
       put(G.trunk(), '#5a4030', CHARSET.WOOD, x, y, z, 1, 1.2, 1, { cut: true });
       put(G.cone(), '#2e5a3e', CHARSET.FOLIAGE, x, y + 0.8, z, cr, ch, cr, { cut: true });
-      put(G.cone(), '#f2f6ff', CHARSET.SNOW, x, y + 0.8 + ch * 0.55, z, cr * 0.55, ch * 0.45, cr * 0.55, { cut: true }); // snow cap
+      put(G.cone(), '#f2f6ff', CHARSET.SNOW, x, y + 0.8 + ch * 0.55, z, cr * 0.55, ch * 0.45, cr * 0.55, { cut: true, sway: [0.55, 0.45] }); // snow cap (moves with the tree)
       return solid(circle(x, z, 0.45, ch, y));
     },
     cactus(x, z, rand) {
@@ -1292,15 +1312,41 @@ export function buildWorld(scene, map) {
 
   inst.build(scene);
 
+  // Bake the light pools: smooth falloff, brightest wins where pools overlap.
+  {
+    const N = 1024, half = map.size / 2, px = map.size / N;
+    const data = new Uint8Array(N * N);
+    for (const [x, z, r, k] of lightSpots) {
+      const cx = (x + half) / px, cz = (z + half) / px, rr = r / px;
+      for (let iz = Math.max(0, Math.floor(cz - rr)); iz <= Math.min(N - 1, Math.ceil(cz + rr)); iz++) {
+        for (let ix = Math.max(0, Math.floor(cx - rr)); ix <= Math.min(N - 1, Math.ceil(cx + rr)); ix++) {
+          const d = Math.hypot(ix + 0.5 - cx, iz + 0.5 - cz) / rr;
+          if (d >= 1) continue;
+          const v = Math.round(255 * k * (1 - d * d) * (1 - d * d));
+          if (v > data[iz * N + ix]) data[iz * N + ix] = v;
+        }
+      }
+    }
+    const tex = new THREE.DataTexture(data, N, N, THREE.RedFormat, THREE.UnsignedByteType);
+    tex.minFilter = tex.magFilter = THREE.LinearFilter;
+    tex.generateMipmaps = false;
+    tex.needsUpdate = true;
+    groundLight.tLight.value = tex;
+    groundLight.uLightMin.value = -half;
+    groundLight.uLightSize.value = map.size;
+  }
+
   return {
     terrain, surfaces, surfaceAt, biomes, colliders, route, bounds: map.bounds, spawn: map.spawn, waterLevel: map.waterLevel,
     /** Per-frame: sea ripples; at dusk/night the sea faintly reflects the sky. */
     update(dt, t, look) {
       seaTime.value = t;
+      swayUniforms.uSwayTime.value = t;
       if (look) {
         seaMat.emissive.copy(look.sky).multiplyScalar(look.night ? 0.24 : 0.12);
         windowLit.emissiveIntensity = look.lights * 1.8; // dusk → night
         lampGlow.emissiveIntensity = 0.15 + look.lights * 2.2;
+        groundLight.uLights.value = look.lights;
         for (const fn of animators) fn(dt, t, look);
         // KETI dial: hands show the in-game time (12 at north, clockwise).
         if (dialHands.length) {

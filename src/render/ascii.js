@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { MAX_SETS, CHARSET_GLYPHS, EDGE_GLYPHS, CHARSET, SET_DENSITY, SET_FILL } from './charsets.js';
 import { cutawayUniforms, CUTAWAY_GLSL } from './cutaway.js';
 import { installShadowMask } from './shadowMask.js';
+import { swayUniforms, SWAY_GLSL } from './sway.js';
 
 installShadowMask(); // before any scene material compiles
 
@@ -91,17 +92,19 @@ function createGlyphAtlas(glyphs, px) {
 // Info pass: flat view-space normal in RGB, charset id in A.
 // Handles InstancedMesh (USE_INSTANCING is defined by three for those draws).
 // `cut` variants discard the same fragments as cutaway colour materials.
-function createInfoMaterial(charsetId, cut = false) {
+function createInfoMaterial(charsetId, cut = false, sway = null) {
   return new THREE.ShaderMaterial({
-    uniforms: { charsetId: { value: charsetId }, ...(cut ? cutawayUniforms : {}) },
+    uniforms: { charsetId: { value: charsetId }, ...(cut ? cutawayUniforms : {}), ...(sway ? swayUniforms : {}) },
     defines: cut ? { CUTAWAY: '' } : {},
     vertexShader: /* glsl */ `
       varying vec3 vViewPos;
       varying vec4 vClip;
+      ${sway ? SWAY_GLSL : ''}
       void main() {
         vec4 p = vec4(position, 1.0);
         #ifdef USE_INSTANCING
           p = instanceMatrix * p;
+          ${sway ? `p.xz += swayOffset(instanceMatrix[3].xz, clamp(${sway[0].toFixed(3)} + ${sway[1].toFixed(3)} * position.y, 0.0, 1.0));` : ''}
         #endif
         vec4 mv = modelViewMatrix * p;
         vViewPos = mv.xyz;
@@ -173,6 +176,8 @@ const fragmentShader = /* glsl */ `
   uniform vec2 airRange;      // aerial perspective start / full (m)
   uniform float airAmount;     // aerial perspective strength
   uniform float shadowDark;    // tint multiplier in full sun shadow (same on every surface)
+  uniform float cloudAmount;   // how much a cloud shadow darkens (0 = no clouds)
+  uniform float cloudTime;
 
   vec2 cellUv(vec2 cell) { return (cell + 0.5) / cells; }
 
@@ -183,6 +188,21 @@ const fragmentShader = /* glsl */ `
 
   float hash(vec2 p) {
     return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+  }
+
+  // Smooth value noise, for drifting cloud shadows.
+  float vnoise(vec2 p) {
+    vec2 i = floor(p), f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x),
+               mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
+  }
+  // 1 under a cloud, 0 in the clear: big soft blobs drifting with the wind,
+  // anchored to the world so they slide over hills, roofs and the sea alike.
+  float cloudShade(vec2 w) {
+    vec2 q = (w + cloudTime * vec2(2.6, 1.1)) / 110.0;
+    float n = vnoise(q) * 0.65 + vnoise(q * 2.3 + 7.3) * 0.35;
+    return smoothstep(0.52, 0.70, n);
   }
 
   // Runs once per CELL (render target is cols × rows). Two variants:
@@ -277,7 +297,10 @@ const fragmentShader = /* glsl */ `
     vec3 tint = mix(monoColor, mix(hue, vec3(1.0), pastel), colorMode);
     if (soft && edge == 0.0) tint *= clamp(0.25 + 1.1 * lum, 0.25, 1.0); // shade by colour
     // Cast shadows: one dark tone everywhere (pads, roads, grass, walls alike).
-    tint *= mix(shadowDark, 1.0, lit);
+    // Cloud shadows are a lighter veil and never stack on a cast shadow.
+    float shade = mix(shadowDark, 1.0, lit);
+    if (cloudAmount > 0.0) shade = min(shade, 1.0 - cloudAmount * cloudShade(wxz));
+    tint *= shade;
     // Aerial perspective: farther cells fade toward the air colour (less
     // saturated, less contrast), so depth reads in a top-down view.
     float air = smoothstep(airRange.x, airRange.y, linearDepth(uv)) * airAmount;
@@ -414,6 +437,8 @@ export class AsciiRenderer {
         airAmount: { value: 0.6 },
         airRange: { value: new THREE.Vector2(32, 110) },
         shadowDark: { value: 0.22 },
+        cloudAmount: { value: 0 },
+        cloudTime: { value: 0 },
       },
       depthTest: false,
       depthWrite: false,
@@ -459,6 +484,15 @@ export class AsciiRenderer {
     this._onChildChange = () => { this._dirty = true; };
   }
 
+  /** Info material for a swaying plant: moves exactly like its colour material. */
+  _swayInfo(charset, cut, sway) {
+    const key = `${charset}|${cut}|${sway.join(',')}`;
+    this._swayMats ??= new Map();
+    let m = this._swayMats.get(key);
+    if (!m) this._swayMats.set(key, m = createInfoMaterial(charset, cut, sway));
+    return m;
+  }
+
   /** Force the info-pass mesh list to rebuild next frame. */
   invalidate() {
     this._dirty = true;
@@ -486,8 +520,11 @@ export class AsciiRenderer {
   _ensureAtlas(px) {
     if (px === this._atlasPx) return;
     const u = this.material.uniforms;
-    u.tGlyphs.value.dispose();
-    const atlas = createGlyphAtlas(this._glyphs, px);
+    // Kept per size: the overview camera flips between two sizes.
+    this._atlases ??= new Map();
+    if (!this._atlasPx) u.tGlyphs.value.dispose(); // the measuring atlas from the constructor
+    let atlas = this._atlases.get(px);
+    if (!atlas) this._atlases.set(px, atlas = createGlyphAtlas(this._glyphs, px));
     u.tGlyphs.value = atlas.texture;
     u.atlasRows.value = atlas.rows;
     this._atlasPx = px;
@@ -510,7 +547,11 @@ export class AsciiRenderer {
     // Moonlight shadows stay faint; full-strength shadows need real sun.
     const sun = Math.min(1, Math.max(0, (look.sunI - 0.4) / 1.6));
     u.shadowDark.value = 1 - 0.78 * sun;
+    u.cloudAmount.value = 0.34 * sun; // no cloud shadows by moonlight
   }
+
+  /** Clock for the drifting cloud shadows (seconds). */
+  setTime(t) { this.material.uniforms.cloudTime.value = t; }
 
   /** Aerial perspective range (m); widened for the overview camera. */
   setAirRange(near, far) { this.material.uniforms.airRange.value.set(near, far); }
@@ -586,7 +627,9 @@ export class AsciiRenderer {
     for (let i = 0; i < meshes.length; i++) {
       const m = meshes[i];
       saved[i] = m.material;
-      const table = m.material.userData.cutaway ? this.infoMaterialsCut : this.infoMaterials;
+      const ud = m.material.userData;
+      if (ud.sway && !m.userData.infoMaterial) { m.material = this._swayInfo(m.userData.charset ?? 0, !!ud.cutaway, ud.sway); continue; }
+      const table = ud.cutaway ? this.infoMaterialsCut : this.infoMaterials;
       m.material = m.userData.infoMaterial ?? table[m.userData.charset ?? 0] ?? table[0];
     }
     this._hidden.length = 0;

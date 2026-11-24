@@ -64,7 +64,14 @@ export class CarView {
   setLights(k) {
     this.headlight.intensity = 60 * k;
     this.lampMat.emissiveIntensity = 1.5 * k;
-    this.tailMat.emissiveIntensity = 1.2 * k;
+    this.lights = k;
+    this.tailMat.emissiveIntensity = 1.2 * k + 3 * (this.brake ?? 0);
+  }
+
+  /** Brake lights: 0..1, eased so they don't flicker with a tapped pedal. */
+  setBrake(on, dt) {
+    this.brake = (this.brake ?? 0) + ((on ? 1 : 0) - (this.brake ?? 0)) * Math.min(1, dt * 18);
+    this.tailMat.emissiveIntensity = 1.2 * (this.lights ?? 0) + 3 * this.brake;
   }
 
   /** Squash the body (landings). */

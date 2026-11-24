@@ -142,6 +142,9 @@ input.onPress('KeyV', () => {
 });
 // Overview (F, or stopping on a career pad): the camera lifts into a slow
 // orbit over the region; any driving input brings it back to the car.
+const OVERVIEW_GLYPH = 0.67; // glyph size in the overview, relative to the setting
+let glyphScale = 1;
+const cellPx = () => Math.max(6, Math.round(settings.get('glyph') * glyphScale));
 const careerZones = map.zones.filter(z => z.view);
 function regionView() {
   const here = place();
@@ -277,7 +280,7 @@ const quality = createAutoQuality({
 rig.setMode(settings.get('camera'));
 audio.setMuted(!settings.get('sound'));
 settings.onChange((key, v) => {
-  if (key === 'glyph') ascii.setCellSize(v);
+  if (key === 'glyph') ascii.setCellSize(cellPx());
   else if (key === 'colour') ascii.setColor(v);
   else if (key === 'edges') ascii.setEdges(v);
   else if (key === 'camera') rig.setMode(v);
@@ -359,6 +362,10 @@ const loop = createLoop({
     }
     ascii.setAirRange(32 + ovR * 2.2, 110 + ovR * 3.4);
     lighting.setRange(1 + ovR * 1.4 / 28);
+    // Finer glyphs up there, so a region's details survive the distance
+    // (swapped mid-flight, where the motion hides it).
+    const fine = rig.overviewK > 0.5 ? OVERVIEW_GLYPH : 1;
+    if (fine !== glyphScale) { glyphScale = fine; ascii.setCellSize(cellPx()); }
     // Time of day: ease toward the target hour along the shorter way round the clock.
     const want = loop24.hour ?? PRESETS[preset];
     const diff = ((want - hour + 36) % 24) - 12;
@@ -369,6 +376,7 @@ const loop = createLoop({
     scene.fog.color.copy(look.fog);
     scene.background.copy(look.fog);
     car.setLights(look.lights);
+    { const it = devIntents ?? readIntents(input.state); car.setBrake(it.brake > 0 || it.handbrake > 0, dt); }
 
     particles.drive(dt, car.rearWheels(wheels), vehicle);
     particles.update(dt);
@@ -389,7 +397,7 @@ const loop = createLoop({
   },
 });
 
-loop.onUpdate((dt, t) => world.update(dt, t, look));
+loop.onUpdate((dt, t) => { world.update(dt, t, look); ascii.setTime(t); });
 loop.start();
 
 // First frame is up: drop the boot screen (first visit: wait for "start").

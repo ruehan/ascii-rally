@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { SURFACE_IDS } from './surfaces.js';
 import { createTerrainInfoMaterial } from '../render/terrainInfo.js';
+import { groundLight, GROUND_LIGHT_GLSL } from '../render/groundLight.js';
 
 // Ground colour by height (low → high) and for steep rock.
 const LOW = new THREE.Color('#5f7038');   // olive valley
@@ -130,17 +131,27 @@ export function createTerrainMesh(terrain, surfaces, biomes = null, { waterLevel
     shader.uniforms.uSurfColor = { value: surfaceColors };
     shader.uniforms.uTime = time;
     shader.uniforms.uWater = { value: waterLevel };
+    Object.assign(shader.uniforms, groundLight);
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying vec2 vWorldXZ;\nvarying vec3 vWorldN;\nvarying float vWorldY;')
-      .replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\nvWorldN = normalize(mat3(modelMatrix) * objectNormal);')
+      .replace('#include <common>', '#include <common>\nattribute vec2 biome;\nvarying vec2 vBiome;\nvarying vec2 vWorldXZ;\nvarying vec3 vWorldN;\nvarying float vWorldY;')
+      .replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\nvBiome = biome;\nvWorldN = normalize(mat3(modelMatrix) * objectNormal);')
       .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvec4 wpos = modelMatrix * vec4(transformed, 1.0);\nvWorldXZ = wpos.xz;\nvWorldY = wpos.y;');
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>
         varying vec2 vWorldXZ;
         varying vec3 vWorldN;
         varying float vWorldY;
+        varying vec2 vBiome;
+        float gHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+        float gNoise(vec2 p) {
+          vec2 i = floor(p), f = fract(p);
+          f = f * f * (3.0 - 2.0 * f);
+          return mix(mix(gHash(i), gHash(i + vec2(1.0, 0.0)), f.x),
+                     mix(gHash(i + vec2(0.0, 1.0)), gHash(i + vec2(1.0, 1.0)), f.x), f.y);
+        }
         uniform float uTime;
         uniform float uWater;
+        ${GROUND_LIGHT_GLSL}
         uniform sampler2D tSurfId;
         uniform float uWorldMin;
         uniform float uWorldSize;
@@ -148,6 +159,18 @@ export function createTerrainMesh(terrain, surfaces, biomes = null, { waterLevel
       .replace('#include <color_fragment>', `#include <color_fragment>
         float sid = floor(texture2D(tSurfId, (vWorldXZ - uWorldMin) / uWorldSize).r * 255.0 + 0.5);
         if (sid > 0.5) diffuseColor.rgb = uSurfColor[int(clamp(sid, 0.0, 15.0))];
+        else if (vWorldY > uWater + 0.6) {
+          // Open ground isn't one flat colour: lusher and drier patches
+          // (meadow vs. dry grass) drift across it — a change of hue more
+          // than of brightness, so the glyph texture stays calm. Snow and
+          // sand only get faint wind-drift shading.
+          float v = gNoise(vWorldXZ * 0.03) * 0.6 + gNoise(vWorldXZ * 0.085 + 31.0) * 0.4;
+          float wild = clamp(1.0 - vBiome.x - vBiome.y, 0.0, 1.0);
+          vec3 lush = diffuseColor.rgb * vec3(0.80, 1.07, 0.74);
+          vec3 dry = diffuseColor.rgb * vec3(1.13, 1.00, 0.80);
+          diffuseColor.rgb = mix(diffuseColor.rgb, mix(lush, dry, smoothstep(0.32, 0.68, v)), wild);
+          diffuseColor.rgb *= 1.0 + (v - 0.5) * 0.14 * (1.0 - wild);
+        }
         // Kerbs: red/white blocks along the road.
         if (abs(sid - ${SURFACE_IDS.kerb}.0) < 0.5 && fract((vWorldXZ.x + vWorldXZ.y) * 0.5) < 0.5) diffuseColor.rgb = vec3(0.95);
         // Hillshade: relief lit from the north-west whatever the sun does, so
@@ -166,7 +189,10 @@ export function createTerrainMesh(terrain, surfaces, biomes = null, { waterLevel
           float above = vWorldY - uWater;
           float foam = above > -0.2 && above < 1.0 ? (1.0 - smoothstep(reach * 0.5, reach, above)) : 0.0;
           diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.93, 0.96, 0.97), foam * 0.85);
-        }`);
+        }`)
+      // Night: warm pools under lamps and outside lit windows (baked map).
+      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+        totalEmissiveRadiance += lampLight(vWorldXZ, diffuseColor.rgb, 1.1);`);
   };
 
   const infoMaterial = createTerrainInfoMaterial({ surfaceIdTex: idTex, surfaceSdfTex: sdfTex, size: surfaces.size });
