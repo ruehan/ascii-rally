@@ -10,8 +10,8 @@ import { material } from '../world/materials.js';
  * A builder returns:
  *   wheels  [{ x, z, r, w }]  positions relative to the car centre (front = -z)
  *   rim     wheel rim colour
- *   lamp    [x, y, z] where the headlight beam starts
- *   lamps   [[x, y, z, w, h]] headlight lenses        tails  same, tail lights
+ *   lamps   [[x, y, z, w, h]] headlight lenses; the first two are the main beams
+ *   tails   same, tail lights
  */
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler();
 const _p = new THREE.Vector3(), _one = new THREE.Vector3(1, 1, 1), _c = new THREE.Color();
@@ -93,7 +93,6 @@ const BUILDERS = {
       .box(0.14, 0.1, 0.14, '#8a8f98', 0.5, 0.42, 2.0);                              // exhaust
     return {
       wheels: corners(0.92, 1.25).map(([x, z]) => ({ x, z, r: 0.42, w: 0.34 })), rim: '#f0f0f0',
-      lamp: [0, 0.8, -1.98],
       lamps: [[-0.6, 0.72, -1.97, 0.42, 0.16], [0.6, 0.72, -1.97, 0.42, 0.16], [-0.24, 1.0, -1.8, 0.3, 0.16], [0.24, 1.0, -1.8, 0.3, 0.16]],
       tails: [[-0.62, 0.78, 1.97, 0.4, 0.14], [0.62, 0.78, 1.97, 0.4, 0.14]],
     };
@@ -128,7 +127,6 @@ const BUILDERS = {
       .pair(0.16, 0.08, 0.1, teal, 0.5, 0.74, -0.78);                                // mirrors
     return {
       wheels: corners(0.85, 1).map(([x, z], i) => ({ x, z: z < 0 ? -1.75 : 1.8, r: i < 2 ? 0.36 : 0.38, w: i < 2 ? 0.36 : 0.44 })), rim: '#c8ccd2',
-      lamp: [0, 0.4, -2.72],
       lamps: [[0, 0.33, -2.71, 0.16, 0.1]],
       tails: [[0, 0.5, 2.12, 0.14, 0.22]], // rain light
     };
@@ -156,7 +154,6 @@ const BUILDERS = {
       .pair(0.16, 0.08, 0.12, navy, 0.62, 0.98, -0.9);                               // mirrors
     return {
       wheels: corners(0.9, 1.55).map(([x, z]) => ({ x, z, r: 0.38, w: 0.38 })), rim: gold,
-      lamp: [0, 0.6, -2.3],
       lamps: [[-0.78, 0.6, -2.24, 0.3, 0.16], [0.78, 0.6, -2.24, 0.3, 0.16]],
       tails: [[-0.78, 0.62, 2.27, 0.34, 0.1], [0.78, 0.62, 2.27, 0.34, 0.1]],
     };
@@ -184,7 +181,6 @@ const BUILDERS = {
       .pair(0.2, 0.1, 0.12, orange, 1.0, 1.02, -0.2);                                // mirrors
     return {
       wheels: corners(0.92, 1.35).map(([x, z]) => ({ x, z, r: 0.4, w: 0.38 })), rim: '#9aa0a8',
-      lamp: [0, 0.75, -2.28],
       lamps: [[-0.66, 0.72, -2.26, 0.4, 0.14], [0.66, 0.72, -2.26, 0.4, 0.14]],
       tails: [[-0.66, 0.76, 2.26, 0.42, 0.1], [0.66, 0.76, 2.26, 0.42, 0.1]],
     };
@@ -215,7 +211,6 @@ const BUILDERS = {
       .pair(0.14, 0.2, 0.1, DARK, 1.0, 1.6, -0.72);                                  // mirrors
     return {
       wheels: corners(0.95, 1.3).map(([x, z]) => ({ x, z, r: 0.5, w: 0.4 })), rim: cream,
-      lamp: [0, 1.1, -2.05],
       lamps: [[-0.62, 1.12, -2.03, 0.28, 0.26], [0.62, 1.12, -2.03, 0.28, 0.26]],
       tails: [[-0.78, 1.05, 2.03, 0.16, 0.3], [0.78, 1.05, 2.03, 0.16, 0.3]],
     };

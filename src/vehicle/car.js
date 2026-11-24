@@ -17,11 +17,17 @@ export class CarView {
     this.lampMat = new THREE.MeshStandardMaterial({ color: '#fff3b0', emissive: '#fff0c0', emissiveIntensity: 0 });
     this.tailMat = new THREE.MeshStandardMaterial({ color: '#7a1010', emissive: '#ff2020', emissiveIntensity: 0 });
 
-    // Headlights: present from the start (adding lights later recompiles
-    // every shader); only the intensity changes.
-    this.headlight = new THREE.SpotLight('#fff2d0', 0, 42, 0.5, 0.55, 1);
-    this.headlight.target.position.set(0, -1.5, -16);
-    this.object.add(this.headlight, this.headlight.target);
+    // Lights exist from the start (adding lights later recompiles every
+    // shader); only intensities and positions change. One beam per main
+    // headlight lens, and a small red glow behind the tail lights.
+    this.beams = [0, 1].map(() => {
+      const beam = new THREE.SpotLight('#fff2d0', 0, 42, 0.42, 0.6, 1);
+      this.object.add(beam, beam.target);
+      return beam;
+    });
+    this.beamCount = 2;
+    this.tailGlow = new THREE.PointLight('#ff2a1a', 0, 4.5, 2);
+    this.object.add(this.tailGlow);
 
     this.model = new THREE.Group();
     this.object.add(this.model);
@@ -46,7 +52,18 @@ export class CarView {
         this.body.add(lens);
       }
     }
-    this.headlight.position.set(m.lamp[0], m.lamp[1] + 0.2, m.lamp[2]);
+    // Beams leave from the first two lenses (the main headlights); a car with
+    // a single lamp gets a single beam.
+    this.beamCount = Math.min(2, m.lamps.length);
+    this.beams.forEach((beam, i) => {
+      const [x, y, z] = m.lamps[Math.min(i, m.lamps.length - 1)];
+      beam.position.set(x, y + 0.1, z - 0.05);
+      beam.target.position.set(x * 1.6, y - 2.1, z - 16); // a touch outward, dipped to the road
+    });
+    // The glow sits just behind the tail lights, low, so it pools on the road.
+    const tz = Math.max(...m.tails.map(t => t[2])), ty = m.tails.reduce((a, t) => a + t[1], 0) / m.tails.length;
+    this.tailGlow.position.set(0, Math.min(0.7, ty), tz + 0.75);
+    this._applyLights();
 
     this.wheels = [];
     for (const w of m.wheels) {
@@ -62,16 +79,24 @@ export class CarView {
 
   /** 0 = off, 1 = full night lights. */
   setLights(k) {
-    this.headlight.intensity = 60 * k;
-    this.lampMat.emissiveIntensity = 1.5 * k;
     this.lights = k;
-    this.tailMat.emissiveIntensity = 1.2 * k + 3 * (this.brake ?? 0);
+    this._applyLights();
   }
 
   /** Brake lights: 0..1, eased so they don't flicker with a tapped pedal. */
   setBrake(on, dt) {
     this.brake = (this.brake ?? 0) + ((on ? 1 : 0) - (this.brake ?? 0)) * Math.min(1, dt * 18);
-    this.tailMat.emissiveIntensity = 1.2 * (this.lights ?? 0) + 3 * this.brake;
+    this._applyLights();
+  }
+
+  _applyLights() {
+    const k = this.lights ?? 0, brake = this.brake ?? 0;
+    this.beams.forEach((beam, i) => { beam.intensity = i < this.beamCount ? (this.beamCount === 1 ? 60 : 36) * k : 0; });
+    this.lampMat.emissiveIntensity = 1.5 * k;
+    this.tailMat.emissiveIntensity = 1.2 * k + 3 * brake;
+    // Tail lights tint the road behind: faint when running, stronger on the brakes
+    // (in daylight only a hint of it shows).
+    this.tailGlow.intensity = 1.3 * k + 4.5 * brake * (0.2 + 0.8 * k);
   }
 
   /** Squash the body (landings). */
