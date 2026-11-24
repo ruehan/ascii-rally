@@ -52,10 +52,11 @@ export function t(key, params = {}) {
 
 const STR = {
   en: {
-    help: 'WASD/arrows drive · Space handbrake · Q car · E open · M map · Esc close · R paddock\nV camera · T time · N sound · C colour · G outlines · +/- glyph size · L 한국어 · H help · O settings',
+    help: 'WASD/arrows drive · Space handbrake · Q car · E open · M map · Esc close · R paddock\nV camera · F overview · T time · N sound · C colour · G outlines · +/- glyph size · L 한국어 · H help · O settings',
     close: '[Esc] close',
     'note.camera': ({ mode }) => `> camera: ${mode === 'chase' ? 'chase' : 'north-up'}`,
     'note.sound': ({ on }) => `> sound: ${on ? 'on' : 'off'}`,
+    'note.overview': ({ name }) => `> overview: ${name} — drive or F to return`,
     'note.time': ({ i }) => `> time: ${['afternoon', 'sunset', 'night', 'dawn'][i]}`,
     'note.time24': '> 24H running — the clock is the race',
     'note.nav': ({ name, dist, clock }) => `> ${name} · ${dist}m · ${clock} o'clock`,
@@ -125,10 +126,11 @@ const STR = {
     'surf.asphalt': 'tarmac', 'surf.kerb': 'kerb', 'surf.pad': 'pad', 'surf.snow': 'snow', 'surf.ice': 'ice', 'surf.dune': 'dunes',
   },
   ko: {
-    help: 'WASD/방향키 운전 · Space 핸드브레이크 · Q 차량 · E 열기 · M 지도 · Esc 닫기 · R 출발점\nV 카메라 · T 시간대 · N 소리 · C 컬러 · G 윤곽선 · +/- 글자 크기 · L English · H 도움말 · O 설정',
+    help: 'WASD/방향키 운전 · Space 핸드브레이크 · Q 차량 · E 열기 · M 지도 · Esc 닫기 · R 출발점\nV 카메라 · F 전경 · T 시간대 · N 소리 · C 컬러 · G 윤곽선 · +/- 글자 크기 · L English · H 도움말 · O 설정',
     close: '[Esc] 닫기',
     'note.camera': ({ mode }) => `> 카메라: ${mode === 'chase' ? '추격' : '북쪽 고정'}`,
     'note.sound': ({ on }) => `> 소리: ${on ? '켜짐' : '꺼짐'}`,
+    'note.overview': ({ name }) => `> 전경: ${name} — 운전하거나 F로 복귀`,
     'note.time': ({ i }) => `> 시간대: ${['오후', '해질녘', '밤', '새벽'][i]}`,
     'note.time24': '> 24H 진행 중 — 시계가 곧 레이스',
     'note.nav': ({ name, dist, clock }) => `> ${name} · ${dist}m · ${clock}시 방향`,

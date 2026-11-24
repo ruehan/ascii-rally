@@ -31,6 +31,7 @@ export default {
   zones: [
     {
       id: 'keti', title: 'KETI', label: { en: 'KETI campus', ko: 'KETI 캠퍼스' }, path: '~/career/keti', content: 'career', career: 'keti',
+      view: { center: [70, -84], r: 72, angle: Math.PI * 0.75 }, // from over the sea (NE)
       pos: DIAL.pos, r: DIAL.r, surface: 'asphalt',
     },
   ],

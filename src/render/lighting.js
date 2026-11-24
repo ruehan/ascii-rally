@@ -26,6 +26,8 @@ export function createLighting(scene) {
 
   const toLight = new THREE.Vector3(20, 35, 10).normalize(); // direction towards the light
   const dir = new THREE.Vector3(), right = new THREE.Vector3(), up = new THREE.Vector3();
+  let extent = SHADOW_EXTENT;
+  let sunDist = SUN_DISTANCE;
   let texel = (SHADOW_EXTENT * 2) / SHADOW_MAP;
   const snapped = new THREE.Vector3();
 
@@ -47,7 +49,7 @@ export function createLighting(scene) {
     const c = target.dot(dir);
     snapped.copy(right).multiplyScalar(a).addScaledVector(up, b).addScaledVector(dir, c);
     sun.target.position.copy(snapped);
-    sun.position.copy(snapped).addScaledVector(toLight, SUN_DISTANCE);
+    sun.position.copy(snapped).addScaledVector(toLight, sunDist);
   }
 
   /** Applies a timeOfDay sample. */
@@ -76,8 +78,22 @@ export function createLighting(scene) {
     sun.shadow.map?.dispose();
     sun.shadow.map = null;
     sun.shadow.mapSize.set(size, size);
-    texel = (SHADOW_EXTENT * 2) / size;
+    texel = (extent * 2) / size;
   }
 
-  return { sun, follow, setTime, setShadowSize };
+  /**
+   * Widens the shadow frustum (overview camera): `scale` 1 = normal. Coarser
+   * texels, but a whole region keeps its shadows.
+   */
+  function setRange(scale) {
+    const e = Math.round(SHADOW_EXTENT * scale);
+    if (e === extent) return;
+    extent = e;
+    sunDist = SUN_DISTANCE * Math.max(1, scale * 0.8);
+    Object.assign(sun.shadow.camera, { left: -e, right: e, top: e, bottom: -e, far: 100 + sunDist * 2.2 });
+    sun.shadow.camera.updateProjectionMatrix();
+    texel = (e * 2) / sun.shadow.mapSize.x;
+  }
+
+  return { sun, follow, setTime, setShadowSize, setRange };
 }

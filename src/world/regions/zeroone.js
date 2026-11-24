@@ -20,6 +20,7 @@ export default {
     {
       id: 'zeroone', title: 'ZERO ONE', label: { en: 'Zero One depot', ko: '제로원 차고지' },
       path: '~/career/zero-one', content: 'career', career: 'zeroone',
+      view: { center: [472, 438], r: 78, angle: Math.PI / 2 }, // from the east
       pos: DEPOT.pos, r: DEPOT.r, surface: 'pad',
     },
   ],

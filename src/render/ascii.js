@@ -170,6 +170,7 @@ const fragmentShader = /* glsl */ `
   uniform float fogFar;
   uniform vec2 cells;          // cell grid size (cols, rows)
   uniform mat4 invViewProj;    // NDC → world, for world-anchored dithering
+  uniform vec2 airRange;      // aerial perspective start / full (m)
   uniform float airAmount;     // aerial perspective strength
   uniform float shadowDark;    // tint multiplier in full sun shadow (same on every surface)
 
@@ -279,7 +280,7 @@ const fragmentShader = /* glsl */ `
     tint *= mix(shadowDark, 1.0, lit);
     // Aerial perspective: farther cells fade toward the air colour (less
     // saturated, less contrast), so depth reads in a top-down view.
-    float air = smoothstep(32.0, 110.0, linearDepth(uv)) * airAmount;
+    float air = smoothstep(airRange.x, airRange.y, linearDepth(uv)) * airAmount;
     tint = mix(tint, background * 1.6 + vec3(0.07), air);
     // The wash keeps the surface colour under contours; road edges also
     // darken the wash so the road reads as a crisp band.
@@ -411,6 +412,7 @@ export class AsciiRenderer {
         cells: { value: new THREE.Vector2(1, 1) },
         invViewProj: { value: new THREE.Matrix4() },
         airAmount: { value: 0.6 },
+        airRange: { value: new THREE.Vector2(32, 110) },
         shadowDark: { value: 0.22 },
       },
       depthTest: false,
@@ -509,6 +511,9 @@ export class AsciiRenderer {
     const sun = Math.min(1, Math.max(0, (look.sunI - 0.4) / 1.6));
     u.shadowDark.value = 1 - 0.78 * sun;
   }
+
+  /** Aerial perspective range (m); widened for the overview camera. */
+  setAirRange(near, far) { this.material.uniforms.airRange.value.set(near, far); }
 
   setColor(on) { this.material.uniforms.colorMode.value = on ? 1 : 0; }
   setEdges(on) { this.material.uniforms.edgesOn.value = on ? 1 : 0; }

@@ -16,6 +16,11 @@ const MODES = {
 };
 
 const wrap = a => Math.atan2(Math.sin(a), Math.cos(a));
+const smooth = t => t * t * (3 - 2 * t);
+
+// Overview: a slow high orbit around a region (career pads, F key).
+const OV_IN = 1.6, OV_OUT = 1.1;   // seconds to fly up / back down
+const OV_SWAY = 0.3, OV_RATE = 0.12; // gentle back-and-forth around the view angle
 
 export function createCameraRig(camera, terrain) {
   const target = new THREE.Vector3();
@@ -25,6 +30,15 @@ export function createCameraRig(camera, terrain) {
   let groundY = null;
   let lift = 0;
   let shake = 0;           // metres, decays
+  // Chase pose (smoothed) kept apart so the overview can blend over it.
+  const chasePos = new THREE.Vector3();
+  const chaseLook = new THREE.Vector3();
+  let ov = null;           // { center:[x,z], r, y, angle }
+  let ovK = 0;             // 0 = chase, 1 = overview
+  let ovWant = 0;
+  const ovPos = new THREE.Vector3();
+  const ovLook = new THREE.Vector3();
+  const focus = new THREE.Vector3(); // what the view is about (shadows follow it)
 
   function update(dt, car, vehicle) {
     const m = MODES[mode];
@@ -58,8 +72,29 @@ export function createCameraRig(camera, terrain) {
     lift += (need - lift) * (1 - Math.exp(-dt * (need > lift ? 6 : 1.5)));
 
     goal.set(target.x + bx * (1 - lift * 0.03), target.y + m.height + lift, target.z + bz * (1 - lift * 0.03));
-    camera.position.lerp(goal, 1 - Math.exp(-dt * 5));
-    camera.lookAt(target.x, target.y + 0.8, target.z);
+    chasePos.lerp(goal, 1 - Math.exp(-dt * 5));
+    chaseLook.set(target.x, target.y + 0.8, target.z);
+
+    // Overview blend: fly up to a slow orbit, or back down to the car.
+    ovK = ovWant ? Math.min(1, ovK + dt / OV_IN) : Math.max(0, ovK - dt / OV_OUT);
+    if (ov && ovK > 0) {
+      ov.t += dt;
+      const a = ov.angle + Math.sin(ov.t * OV_RATE) * OV_SWAY;
+      const d = ov.r * 1.35, h = ov.r * 1.9; // ~2.3r away: the whole region fits the 45° view
+      ovPos.set(ov.center[0] + Math.sin(a) * d, ov.y + h, ov.center[1] + Math.cos(a) * d);
+      ovLook.set(ov.center[0], ov.y, ov.center[1]);
+      const k = smooth(ovK);
+      camera.position.lerpVectors(chasePos, ovPos, k);
+      // Arc up rather than cut through hills on the way.
+      camera.position.y += Math.sin(Math.PI * k) * ov.r * 0.25;
+      focus.lerpVectors(chaseLook, ovLook, k);
+      camera.lookAt(focus);
+    } else {
+      if (!ovWant) ov = null;
+      camera.position.copy(chasePos);
+      camera.lookAt(chaseLook);
+      focus.copy(chaseLook);
+    }
     if (shake > 0.01) {
       camera.position.x += (Math.random() - 0.5) * shake;
       camera.position.y += (Math.random() - 0.5) * shake;
@@ -73,14 +108,39 @@ export function createCameraRig(camera, terrain) {
     target.copy(car.position);
     groundY = terrain.heightAt(car.position.x, car.position.z);
     target.y = groundY;
-    camera.position.set(target.x + Math.sin(yaw) * m.dist, target.y + m.height, target.z + Math.cos(yaw) * m.dist);
+    chasePos.set(target.x + Math.sin(yaw) * m.dist, target.y + m.height, target.z + Math.cos(yaw) * m.dist);
+    chaseLook.set(target.x, target.y + 0.8, target.z);
+    camera.position.copy(chasePos);
     camera.lookAt(target);
+    focus.copy(chaseLook);
+    ov = null; ovK = 0; ovWant = 0;
+  }
+
+  /**
+   * Overview of a region: `{ center:[x,z], r, angle? }` (angle: side the
+   * camera looks from, 0 = from the south; default where it already is),
+   * null flies back to the car.
+   */
+  function overview(view) {
+    if (!view) { ovWant = 0; return; }
+    const [cx, cz] = view.center;
+    const from = Math.atan2(camera.position.x - cx, camera.position.z - cz);
+    if (ov && ovK > 0 && ov.center === view.center) { ovWant = 1; return; }
+    ov = { center: view.center, r: view.r, y: terrain.heightAt(cx, cz), angle: view.angle ?? from, t: 0 };
+    ovWant = 1;
   }
 
   return {
     update,
     snap,
     target,
+    focus,
+    overview,
+    /** 0..1 how far into the overview the camera is. */
+    get overviewK() { return smooth(ovK); },
+    /** Size of the region being shown (m), for fog / shadow range. */
+    get overviewR() { return ov ? ov.r : 0; },
+    get inOverview() { return ovWant === 1; },
     /** Kick the camera (landings, crashes). */
     shake(amount) { shake = Math.min(1.2, shake + amount); },
     toggleMode() { mode = mode === 'chase' ? 'top' : 'chase'; return mode; },

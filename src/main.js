@@ -55,6 +55,7 @@ const lighting = createLighting(scene);
 // Nothing past the fog is visible; keep the far plane tight for depth precision.
 camera.far = scene.fog.far + 10;
 camera.updateProjectionMatrix();
+const FOG = { near: scene.fog.near, far: scene.fog.far };
 
 const physics = new ArcadePhysics({
   bounds: world.bounds,
@@ -139,6 +140,22 @@ input.onPress('KeyV', () => {
   settings.set('camera', settings.get('camera') === 'chase' ? 'top' : 'chase');
   ui.note(t('note.camera', { mode: settings.get('camera') }));
 });
+// Overview (F, or stopping on a career pad): the camera lifts into a slow
+// orbit over the region; any driving input brings it back to the car.
+const careerZones = map.zones.filter(z => z.view);
+function regionView() {
+  const here = place();
+  const z = careerZones.find(c => c === zones.current || c.path === here);
+  if (z) return { view: z.view, name: zoneName(z) };
+  return { view: { center: [vehicle.x, vehicle.z], r: 55 }, name: here };
+}
+function startOverview(v = regionView()) {
+  rig.overview(v.view);
+  ui.note(t('note.overview', { name: v.name }));
+}
+input.onPress('KeyF', () => (rig.inOverview ? rig.overview(null) : startOverview()));
+bus.on('zone:open', ({ zone }) => { if (zone.view) startOverview({ view: zone.view, name: zoneName(zone) }); });
+
 input.onPress('KeyN', () => ui.note(t('note.sound', { on: settings.toggle('sound') })));
 input.onPress('KeyT', () => {
   if (loop24.state === 'running') return ui.note(t('note.time24'));
@@ -327,7 +344,21 @@ const loop = createLoop({
     perf.begin();
     if (settings.get('quality') === 'auto') quality.frame(dt);
     car.sync(vehicle, alpha, dt);
+    if (rig.inOverview) {
+      const it = devIntents ?? readIntents(input.state);
+      if (it.throttle || it.brake || it.steer || Math.abs(vehicle.speed) > 2) rig.overview(null);
+    }
     rig.update(dt, car.object, vehicle);
+    // Overview: see the whole region — push fog, air and shadows out with it.
+    const ovR = rig.overviewK * rig.overviewR;
+    scene.fog.near = FOG.near + ovR * 2.6;
+    scene.fog.far = FOG.far + ovR * 3.6;
+    if (Math.abs(camera.far - (scene.fog.far + 10)) > 0.5) {
+      camera.far = scene.fog.far + 10;
+      camera.updateProjectionMatrix();
+    }
+    ascii.setAirRange(32 + ovR * 2.2, 110 + ovR * 3.4);
+    lighting.setRange(1 + ovR * 1.4 / 28);
     // Time of day: ease toward the target hour along the shorter way round the clock.
     const want = loop24.hour ?? PRESETS[preset];
     const diff = ((want - hour + 36) % 24) - 12;
@@ -342,10 +373,10 @@ const loop = createLoop({
     particles.drive(dt, car.rearWheels(wheels), vehicle);
     particles.update(dt);
     audio.update(dt, vehicle, (devIntents ?? readIntents(input.state)).throttle);
-    lighting.follow(rig.target); // shadows stay sharp around the car
+    lighting.follow(rig.focus); // shadows stay sharp around what the view is about
 
     camera.updateMatrixWorld();
-    updateCutaway(camera, carFocus.copy(car.object.position).setY(car.object.position.y + 1), 0.16);
+    updateCutaway(camera, carFocus.copy(car.object.position).setY(car.object.position.y + 1), 0.16 * (1 - rig.overviewK));
 
     renderer.info.reset();
     ascii.render(scene, camera);
@@ -371,7 +402,7 @@ requestAnimationFrame(() => requestAnimationFrame(async () => {
 // Dev-only handle for debugging / screenshots from the console.
 if (import.meta.env.DEV) {
   window.__stage = {
-    physics, vehicle, terrain, surfaces, stages, zones, renderer, loop24, ascii, scene, camera,
+    physics, vehicle, terrain, surfaces, stages, zones, renderer, loop24, ascii, scene, camera, rig,
     /** GPU-synced render timing (ms per frame) for comparing renderer changes. */
     benchRender(n = 40) {
       const gl = renderer.getContext();

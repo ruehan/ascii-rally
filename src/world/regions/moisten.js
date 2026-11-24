@@ -20,6 +20,7 @@ export default {
     {
       id: 'moisten', title: 'MOISTEN', label: { en: 'Moisten plant', ko: '모이스텐 공장' },
       path: '~/career/moisten', content: 'career', career: 'moisten',
+      view: { center: [285, 105], r: 80, angle: 0 }, // from the south
       pos: YARD.pos, r: YARD.r, surface: 'pad',
     },
   ],
