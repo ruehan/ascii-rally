@@ -86,36 +86,56 @@ const MIX = ['sedan', 'sedan', 'hatch', 'hatch', 'van', 'pickup'];
 // --- Lanes ----------------------------------------------------------------------------
 /**
  * A closed lap for one road: up the right-hand lane, a U-turn before the
- * end, back down the other side, a U-turn before the start. Returns points,
- * cumulative lengths and a speed limit per point (bends and the U-turns).
+ * end, back down the other side, a U-turn before the start. The turns are
+ * driven like real ones — swing out to the right, then round a wide arc
+ * (onto the shoulder on narrow roads) — and the whole lap is smoothed, so
+ * there are no corners in it. Returns points, cumulative lengths and a
+ * speed limit per point (bends and the U-turns).
  */
-function laneLoop(trail, { from = 10, to = trail.length - 10, step = 2.5, cruise = 14 } = {}) {
+function laneLoop(trail, { from = 12, to = trail.length - 12, step = 2.5, cruise = 14 } = {}) {
   const off = Math.max(1.4, Math.min(2.6, (trail.width ?? 6) / 4));
-  const xs = [], zs = [];
+  const R = Math.max(off + 1.6, 4.6);          // U-turn radius
+  const EASE = Math.min(16, (to - from) / 3);  // metres over which a car drifts out for the turn
+  const ease = d => { const t = Math.max(0, Math.min(1, Math.min(d - from, to - d) / EASE)); return R + (off - R) * t * t * (3 - 2 * t); };
+  let xs = [], zs = [];
   const add = (x, z) => { xs.push(x); zs.push(z); };
   const at = d => pointAt(trail.path, trail.cum, d);
   const n = Math.max(2, Math.round((to - from) / step));
-  for (let i = 0; i <= n; i++) { const p = at(from + (to - from) * i / n); add(p.x - p.tz * off, p.z + p.tx * off); }
+  for (let i = 0; i <= n; i++) { const d = from + (to - from) * i / n, p = at(d), o = ease(d); add(p.x - p.tz * o, p.z + p.tx * o); }
   const turn = (p, sign) => {
-    for (let k = 1; k < 8; k++) {
-      const a = (k / 8) * Math.PI, c = Math.cos(a) * off * sign, s = Math.sin(a) * off * sign;
+    for (let k = 1; k < 14; k++) {
+      const a = (k / 14) * Math.PI, c = Math.cos(a) * R * sign, s = Math.sin(a) * R * sign;
       add(p.x - p.tz * c + p.tx * s, p.z + p.tx * c + p.tz * s);
     }
   };
   turn(at(to), 1);
-  const back = xs.length; // index where the return lane starts
-  for (let i = n; i >= 0; i--) { const p = at(from + (to - from) * i / n); add(p.x + p.tz * off, p.z - p.tx * off); }
+  // Where the return lane starts, as a distance (measured before smoothing; close enough).
+  let backAt = 0;
+  for (let i = 1; i < xs.length; i++) backAt += Math.hypot(xs[i] - xs[i - 1], zs[i] - zs[i - 1]);
+  for (let i = n; i >= 0; i--) { const d = from + (to - from) * i / n, p = at(d), o = ease(d); add(p.x + p.tz * o, p.z - p.tx * o); }
   turn(at(from), -1);
+  // Round every corner off (Chaikin, twice).
+  for (let pass = 0; pass < 2; pass++) {
+    const nx = [], nz = [], M = xs.length;
+    for (let i = 0; i < M; i++) {
+      const j = (i + 1) % M;
+      nx.push(xs[i] * 0.75 + xs[j] * 0.25, xs[i] * 0.25 + xs[j] * 0.75);
+      nz.push(zs[i] * 0.75 + zs[j] * 0.25, zs[i] * 0.25 + zs[j] * 0.75);
+    }
+    xs = nx; zs = nz;
+  }
 
   const N = xs.length;
   const cum = new Float32Array(N + 1);
   for (let i = 0; i < N; i++) cum[i + 1] = cum[i] + Math.hypot(xs[(i + 1) % N] - xs[i], zs[(i + 1) % N] - zs[i]);
-  // Speed limit from curvature (lateral 2.6 m/s²), then let cars brake in time (3 m/s²).
-  const vmax = new Float32Array(N);
+  // Speed limit from curvature (lateral 2.6 m/s², measured over a few
+  // points), then let cars brake in time (3 m/s²).
+  const vmax = new Float32Array(N), W = 3;
   for (let i = 0; i < N; i++) {
-    const a = (i + N - 1) % N, b = (i + 1) % N;
+    const a = (i + N - W) % N, b = (i + W) % N;
     const h0 = Math.atan2(xs[i] - xs[a], zs[i] - zs[a]), h1 = Math.atan2(xs[b] - xs[i], zs[b] - zs[i]);
-    const turnRate = Math.abs(Math.atan2(Math.sin(h1 - h0), Math.cos(h1 - h0))) / Math.max(0.5, (cum[i + 1] - cum[i]));
+    const span = Math.hypot(xs[b] - xs[i], zs[b] - zs[i]) + Math.hypot(xs[i] - xs[a], zs[i] - zs[a]);
+    const turnRate = Math.abs(Math.atan2(Math.sin(h1 - h0), Math.cos(h1 - h0))) / Math.max(0.5, span / 2);
     vmax[i] = Math.max(2.5, Math.min(cruise, Math.sqrt(2.6 / Math.max(turnRate, 1e-4))));
   }
   for (let pass = 0; pass < 2; pass++) {
@@ -124,7 +144,7 @@ function laneLoop(trail, { from = 10, to = trail.length - 10, step = 2.5, cruise
       vmax[i] = Math.min(vmax[i], Math.sqrt(vmax[b] * vmax[b] + 2 * 3 * (cum[i + 1] - cum[i])));
     }
   }
-  return { id: trail.id, xs, zs, cum, vmax, N, total: cum[N], back, backAt: cum[back], from, to };
+  return { id: trail.id, xs, zs, cum, vmax, N, total: cum[N], backAt, from, to };
 }
 
 /** Point on a lap at distance s (wraps): writes x, z, tx, tz, i into out. */
@@ -181,8 +201,8 @@ export function createTraffic({ scene, terrain, physics, patrols = [], bus, seed
       loop, s, v: 0, cruise, dim, obj, stops, wait: 0,
       x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, px: 0, py: 0, pz: 0, pyaw: 0, ppitch: 0, proll: 0,
       fx: 0, fz: -1,                       // forward (for the others' look-ahead)
-      stun: 0, kx: 0, kz: 0, kvx: 0, kvz: 0, yawOff: 0, yawV: 0,
-      blocked: 0, ghost: 0, horn: 0, hidden: false,
+      stun: 0, kx: 0, kz: 0, kvx: 0, kvz: 0, yawOff: 0, yawV: 0, lean: 0, dive: 0, pv: 0,
+      blocked: 0, ghost: 0, horn: 0, hidden: false, served: null,
     };
     car.body = physics.addDynamic({
       shape: box(0, 0, dim.hx, dim.hz, 0, dim.h, 0), vx: 0, vz: 0, off: false,
@@ -199,17 +219,28 @@ export function createTraffic({ scene, terrain, physics, patrols = [], bus, seed
     });
     place(car, 1 / 60);
     car.body.vx = car.body.vz = 0;
+    car.lean = car.dive = 0;
     car.px = car.x; car.py = car.y; car.pz = car.z; car.pyaw = car.yaw; car.ppitch = car.pitch; car.proll = car.roll;
     cars.push(car);
     return car;
   }
 
-  const _s = { x: 0, z: 0, tx: 0, tz: 0, i: 0 };
+  const _s = { x: 0, z: 0, tx: 0, tz: 0, i: 0 }, _r = { x: 0, z: 0, tx: 0, tz: 0, i: 0 };
   /** Lane position + knock offset → pose on the ground, collider, velocity. */
   function place(car, dt) {
-    sample(car.loop, car.s, _s);
-    const x = _s.x + car.kx, z = _s.z + car.kz;
-    const yaw = Math.atan2(-_s.tx, -_s.tz) + car.yawOff;
+    // Both axles ride the lane and the body lies along the chord between
+    // them, so the car swings round a bend instead of snapping to it.
+    const axle = car.dim.hz * 0.62;
+    sample(car.loop, car.s + axle, _s);
+    sample(car.loop, car.s - axle, _r);
+    const x = (_s.x + _r.x) / 2 + car.kx, z = (_s.z + _r.z) / 2 + car.kz;
+    const yaw = Math.atan2(_r.x - _s.x, _r.z - _s.z) + car.yawOff;
+    // The body leans out of the turn and dips or squats with the pedals.
+    const rate = wrap(yaw - car.yaw) / dt, acc = (car.v - car.pv) / dt;
+    car.pv = car.v;
+    const kb = Math.min(1, dt * 5);
+    car.lean += (Math.max(-0.07, Math.min(0.07, car.v * rate * 0.01)) - car.lean) * kb;
+    car.dive += (Math.max(-0.05, Math.min(0.04, acc * 0.006)) - car.dive) * kb;
     const fx = -Math.sin(yaw), fz = -Math.cos(yaw), rx = -fz, rz = fx;
     const a = car.dim.hz * 0.7, b = car.dim.hx * 0.8, h = terrain.heightAt;
     const fl = h(x + fx * a - rx * b, z + fz * a - rz * b), fr = h(x + fx * a + rx * b, z + fz * a + rz * b);
@@ -217,8 +248,8 @@ export function createTraffic({ scene, terrain, physics, patrols = [], bus, seed
     car.body.vx = (x - car.x) / dt; car.body.vz = (z - car.z) / dt;
     car.x = x; car.z = z; car.y = (fl + fr + rl + rr) / 4;
     car.yaw = yaw; car.fx = fx; car.fz = fz;
-    car.pitch = Math.atan2((fl + fr) - (rl + rr), 4 * a);
-    car.roll = Math.atan2((rl + fl) - (rr + fr), 4 * b);
+    car.pitch = Math.atan2((fl + fr) - (rl + rr), 4 * a) + car.dive;
+    car.roll = Math.atan2((rl + fl) - (rr + fr), 4 * b) + car.lean;
     const sh = car.body.shape;
     sh.x = x; sh.z = z; sh.rot = yaw; sh.y = car.y;
   }
@@ -242,7 +273,7 @@ export function createTraffic({ scene, terrain, physics, patrols = [], bus, seed
   for (const p of patrols) {
     const t = terrain.trails.find(tr => tr.id === p.trail);
     if (!t) continue;
-    const loop = laneLoop(t, { from: 5, to: t.length - 5, cruise: p.speed ?? 7 });
+    const loop = laneLoop(t, { from: 8, to: t.length - 8, cruise: p.speed ?? 7 });
     // Stops are given along the trail; the truck calls at them both ways.
     const stops = [];
     for (const st of p.stops ?? []) {
@@ -270,8 +301,9 @@ export function createTraffic({ scene, terrain, physics, patrols = [], bus, seed
       const pos = ((car.s % car.loop.total) + car.loop.total) % car.loop.total;
       for (const st of car.stops) {
         const d = st - pos;
+        if (st === car.served) { if (d < -1 || d > 12) car.served = null; continue; } // just called here
         if (d > 0 && d < 12) want = Math.min(want, Math.max(1.2, d * 0.9));
-        if (d > 0 && d < 0.6) { car.wait = 2.5; car.s += d; want = 0; }
+        if (d > 0 && d < 0.6) { car.wait = 2.5; car.served = st; want = 0; }
       }
     }
     if (car.stun > 0) { car.stun -= dt; want = 0; }
