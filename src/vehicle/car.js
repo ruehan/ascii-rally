@@ -3,13 +3,16 @@ import { CHARSET, setCharset } from '../render/charsets.js';
 import { buildCarModel, buildWheel } from './models.js';
 import { DEFAULT_CAR } from './cars.js';
 
+const _p = new THREE.Vector3();
+
 /**
  * Car visuals only. Movement lives in the physics adapter; call
  * `sync(vehicle, alpha, dt)` each frame to copy the interpolated state.
  * `setModel(id)` swaps the body for another car class.
  */
 export class CarView {
-  constructor(scene, id = DEFAULT_CAR) {
+  constructor(scene, id = DEFAULT_CAR, { heightAt = null } = {}) {
+    this.heightAt = heightAt; // lets each wheel follow the ground under it
     this.object = new THREE.Group();
     this.object.rotation.order = 'YXZ'; // heading, then pitch, then roll
 
@@ -31,8 +34,6 @@ export class CarView {
 
     this.model = new THREE.Group();
     this.object.add(this.model);
-    this.squash = 0;
-    this.squashV = 0;
     this.setModel(id);
     scene.add(this.object);
   }
@@ -41,7 +42,8 @@ export class CarView {
     this.id = id;
     this.model.traverse(o => { if (o.isMesh) o.geometry.dispose(); });
     this.model.clear();
-    // Body, lamps and lenses squash together on landings; wheels stay round.
+    // The body (with its lamps) rides on springs above the wheels: sync()
+    // pitches, rolls and heaves it; the wheels stay on the ground.
     this.body = new THREE.Group();
     this.model.add(this.body);
     const m = buildCarModel(id, this.body);
@@ -72,7 +74,7 @@ export class CarView {
       const mesh = buildWheel(w, m.rim);
       pivot.add(mesh);
       this.model.add(pivot);
-      this.wheels.push({ pivot, mesh, front: w.z < 0, r: w.r, x: w.x, z: w.z });
+      this.wheels.push({ pivot, mesh, front: w.z < 0, r: w.r, x: w.x, z: w.z, off: 0 });
     }
     setCharset(this.model, CHARSET.CAR);
   }
@@ -99,11 +101,6 @@ export class CarView {
     this.tailGlow.intensity = 0.35 * k + 1.1 * brake * (0.2 + 0.8 * k);
   }
 
-  /** Squash the body (landings). */
-  bump(amount) {
-    this.squashV -= Math.min(4, amount * 0.35);
-  }
-
   /** World positions of the rear wheel contact points. */
   rearWheels(out = [[0, 0, 0], [0, 0, 0]]) {
     const o = this.object;
@@ -121,15 +118,25 @@ export class CarView {
     this.object.position.set(lerp(v.prevX, v.x), lerp(v.prevY, v.y), lerp(v.prevZ, v.z));
     this.object.rotation.set(lerp(v.prevPitch, v.pitch), lerp(v.prevHeading, v.heading), -lerp(v.prevRoll, v.roll));
 
-    // Spring back from squash.
-    this.squashV += (-120 * this.squash - 12 * this.squashV) * dt;
-    this.squash += this.squashV * dt;
-    const sy = Math.max(0.6, 1 + this.squash);
-    this.body.scale.y = sy;
+    // Body on its springs (physics/arcade.js _stepBody).
+    this.body.rotation.set(lerp(v.prevBodyPitch, v.bodyPitch), 0, -lerp(v.prevBodyRoll, v.bodyRoll));
+    this.body.position.y = lerp(v.prevHeave, v.heave);
 
+    // Wheels: spin, steer, and each one follows the ground under it (droops
+    // in the air), within the suspension's travel.
+    this.object.updateMatrixWorld();
+    const droop = -Math.min(0.16, 0.05 + v.car.soft * 1.6);
     for (const w of this.wheels) {
       w.mesh.rotation.x -= (v.speed * dt) / w.r;
       if (w.front) w.pivot.rotation.y = v.steer * 0.5;
+      let want = 0;
+      if (v.airborne) want = droop;
+      else if (this.heightAt) {
+        _p.set(w.x, 0, w.z).applyMatrix4(this.object.matrixWorld);
+        want = Math.max(droop, Math.min(0.14, this.heightAt(_p.x, _p.z) - _p.y));
+      }
+      w.off += (want - w.off) * Math.min(1, dt * 30);
+      w.pivot.position.y = w.r + w.off;
     }
   }
 }

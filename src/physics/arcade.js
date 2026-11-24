@@ -10,7 +10,7 @@ const LOOSE = { gravel: 1, dirt: 1, grass: 1, sand: 1.3, snow: 1.2, dune: 2.5 };
 // Rolling-resistance coefficient by surface (all cars).
 const ROLL = { asphalt: 0.012, kerb: 0.015, pad: 0.012, cobble: 0.02, gravel: 0.025, dirt: 0.03,
   grass: 0.045, sand: 0.1, snow: 0.06, ice: 0.01, dune: 0.15 };
-// Surface roughness: shakes the body (and the camera with it).
+// Surface roughness: keeps the body busy on its springs.
 const ROUGH = { asphalt: 0.05, kerb: 1, pad: 0.05, cobble: 0.7, gravel: 0.45, dirt: 0.35,
   grass: 0.4, sand: 0.25, snow: 0.2, ice: 0, dune: 0.3 };
 
@@ -43,8 +43,10 @@ const smoothstep = (a, b, x) => {
  * resetVehicle(v, pos, heading), step(dt).
  *
  * Vehicle state: x, z, y, vx, vz, heading (0 = facing -Z), speed (signed,
- * along heading), slip (lateral m/s), steer, vy, pitch, roll, airborne,
- * surface; prev* copies for interpolation; one-step events landed / hit.
+ * along heading), slip (lateral m/s), steer, vy, pitch, roll (the ground
+ * under the wheels), bodyPitch, bodyRoll, heave (the body on its springs),
+ * airborne, surface; prev* copies for interpolation; one-step events
+ * landed / hit.
  */
 export class ArcadePhysics {
   constructor({ bounds, terrain = FLAT_TERRAIN, gravity = 12 } = {}) {
@@ -103,6 +105,8 @@ export class ArcadePhysics {
     v.thrIn = v.brkIn = 0;
     v.pitch = this._ground.pitch;
     v.roll = this._ground.roll;
+    v.bodyPitch = v.bodyRoll = v.heave = 0;
+    v.bodyPitchV = v.bodyRollV = v.heaveV = 0;
     this._snapshot(v);
   }
 
@@ -120,6 +124,7 @@ export class ArcadePhysics {
   _snapshot(v) {
     v.prevX = v.x; v.prevZ = v.z; v.prevY = v.y;
     v.prevHeading = v.heading; v.prevPitch = v.pitch; v.prevRoll = v.roll;
+    v.prevBodyPitch = v.bodyPitch; v.prevBodyRoll = v.bodyRoll; v.prevHeave = v.heave;
   }
 
   /** Average height + pitch/roll under the four wheels. */
@@ -314,6 +319,44 @@ export class ArcadePhysics {
     this._collide(v);
     this._clampBounds(v);
     this._stepVertical(v, dt);
+    this._stepBody(v, dt);
+  }
+
+  /**
+   * The sprung body on its wheels: pitch, roll and heave are damped springs
+   * driven by the car's accelerations, so the body dives under braking,
+   * squats on power, leans out of corners, rises over crests, sinks in
+   * compressions (and under downforce), thumps down on landings — and rocks
+   * back afterwards. Soft cars are slow and wallowy, stiff ones barely move.
+   * Relative to the wheels, which follow the ground (v.pitch / v.roll).
+   */
+  _stepBody(v, dt) {
+    const c = v.car;
+    const w = 2 * Math.PI * (3.1 - c.soft * 24);   // ride frequency: 4x4 1.4 Hz … formula 3 Hz
+    const zeta = 0.72 - c.soft * 5;                // damping ratio: 4x4 0.37 … formula 0.69
+    const grounded = !v.airborne;
+    let pT = 0, rT = 0, hT = 0;
+    if (grounded) {
+      // Rough surfaces keep the body busy (pattern fixed to the ground).
+      const rough = (ROUGH[v.surface] ?? ROUGH.grass) * Math.min(1, Math.abs(v.speed) / 15);
+      const shake = rough * (0.006 + c.soft * 0.16);
+      const n1 = Math.sin(v.x * 3.1 + v.z * 1.7) * Math.sin(v.z * 2.3 - v.x * 0.9);
+      const n2 = Math.sin(v.x * 2.2 - v.z * 3.3) * Math.sin(v.x * 1.3 + v.z * 2.9);
+      pT = Math.max(-0.11, Math.min(0.11, ((v.ax ?? 0) / G) * c.soft * 1.5)) + n1 * shake;
+      rT = Math.max(-0.12, Math.min(0.12, ((v.ay ?? 0) / G) * c.soft * 1.5)) + n2 * shake;
+      // Static deflection per g of extra load is g / w².
+      const down = (0.5 * RHO * c.cla * v.speed * v.speed) / (c.mass * G);
+      hT = Math.max(-0.1, Math.min(0.08, -(((v.load ?? 1) - 1) + down * 0.5) * G / (w * w)));
+    }
+    if (v.landed) v.heaveV -= Math.min(2.6, v.landed * 0.24); // the body keeps falling onto its springs
+    const spring = (x, vel, target) => vel + (w * w * (target - x) - 2 * zeta * w * vel) * dt;
+    v.bodyPitchV = spring(v.bodyPitch, v.bodyPitchV, pT);
+    v.bodyRollV = spring(v.bodyRoll, v.bodyRollV, rT);
+    v.heaveV = spring(v.heave, v.heaveV, hT);
+    v.bodyPitch += v.bodyPitchV * dt;
+    v.bodyRoll += v.bodyRollV * dt;
+    v.heave += v.heaveV * dt;
+    if (v.heave < -0.2) { v.heave = -0.2; v.heaveV = Math.max(0, v.heaveV); } // bump stops
   }
 
   _collide(v) {
@@ -386,18 +429,11 @@ export class ArcadePhysics {
       v.airTime = 0;
       return;
     }
-    // Body follows the ground, squats/dives with acceleration, leans out of
-    // corners and shakes on rough surfaces.
-    const c = v.car;
-    const rough = (ROUGH[v.surface] ?? ROUGH.grass) * Math.min(1, Math.abs(v.speed) / 15);
-    const shake = rough * (0.004 + c.soft * 0.12);
-    const n1 = Math.sin(v.x * 3.1 + v.z * 1.7) * Math.sin(v.z * 2.3 - v.x * 0.9);
-    const n2 = Math.sin(v.x * 2.2 - v.z * 3.3) * Math.sin(v.x * 1.3 + v.z * 2.9);
-    const pitchT = g.pitch + Math.max(-0.08, Math.min(0.08, ((v.ax ?? 0) / G) * c.soft)) + n1 * shake;
-    const rollT = g.roll + Math.max(-0.1, Math.min(0.1, ((v.ay ?? 0) / G) * c.soft)) + n2 * shake;
+    // The wheels (and so the chassis plane) follow the ground; the body's own
+    // dive, squat and lean live in _stepBody.
     const k = Math.min(1, dt * 12);
-    v.pitch += (pitchT - v.pitch) * k;
-    v.roll += (rollT - v.roll) * k;
+    v.pitch += (g.pitch - v.pitch) * k;
+    v.roll += (g.roll - v.roll) * k;
   }
 
   _clampBounds(v) {

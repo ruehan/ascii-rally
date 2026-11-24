@@ -67,7 +67,7 @@ world.colliders.forEach(s => physics.addStatic(s));
 const savedCar = (() => { try { return localStorage.getItem('stage~/car'); } catch { return null; } })();
 let carId = CAR_ORDER.includes(savedCar) ? savedCar : DEFAULT_CAR;
 const vehicle = physics.createVehicle({ pos: world.spawn.pos, heading: world.spawn.heading, car: carId });
-const car = new CarView(scene, carId);
+const car = new CarView(scene, carId, { heightAt: terrain.heightAt });
 const rig = createCameraRig(camera, terrain);
 
 // --- Game systems ---------------------------------------------------------
@@ -326,7 +326,6 @@ const loop = createLoop({
     // Impacts: camera kick, body squash, dust, thump.
     if (vehicle.landed > 3) {
       rig.shake(vehicle.landed * 0.05);
-      car.bump(vehicle.landed);
       audio.land(vehicle.landed);
       particles.burst(vehicle.x, vehicle.y, vehicle.z, Math.min(30, Math.round(vehicle.landed * 3)));
     }

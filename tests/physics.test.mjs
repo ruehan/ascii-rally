@@ -145,6 +145,7 @@ console.log('all physics tests passed');
   assert.ok(yaw(1) > 0 && yaw(0) > 0, 'turns');
   const { v: vb } = run('gt', flatT('asphalt'), 120, { brake: 1 }, 0.5);
   assert.ok(vb.ax < -9, `braking decel registers (${(vb.ax / 9.81).toFixed(2)} g)`);
-  assert.ok(vb.pitch < 0, 'nose dives under braking');
+  assert.ok(vb.bodyPitch < -0.01, `nose dives under braking (${vb.bodyPitch.toFixed(3)} rad)`);
+  assert.ok(Math.abs(vb.pitch) < 1e-6, 'the wheels stay flat on flat ground');
   console.log('realism checks passed');
 }
