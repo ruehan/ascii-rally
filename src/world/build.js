@@ -757,6 +757,56 @@ export function buildWorld(scene, map) {
     }
   }
 
+  // --- Career 3: Moisten botanical plant ---------------------------------------------
+  // White clean-room plant, film rolls by the yard, robot arms over a belt,
+  // and glowing chevrons painted on the FILM LINE conveyor strips.
+  {
+    const zm = zone('moisten');
+    if (zm) {
+      const [mx, mz] = zm.pos;
+      // Clean-room plant south of the yard.
+      const px = mx + 22, pz = mz + 38;
+      if (boxClear(px, pz, 24, 14, 0, 1)) {
+        const { lo } = footprint(px, pz, 12, 7, 0);
+        put(G.block(), '#f3f5f7', CHARSET.WALL, px, lo - 0.4, pz, 24, 8.4, 14, { cut: true });
+        put(G.block(), '#d9dee3', CHARSET.WALL, px, lo + 8, pz, 24.4, 0.4, 14.4, { cut: true });
+        for (const dx of [-7, 0, 7]) put(G.cylinder(), '#b9c0c8', CHARSET.WALL, px + dx, lo + 8.4, pz, 0.9, 1.6, 0.9);
+        windows(px, pz, 0, 24, 14, lo, 2, rng(77));
+        solid(box(px, pz, 12, 7, 0, 8.4, lo - 0.4));
+        // Belt along the plant's north face with two robot arms.
+        const bz = pz - 9.5, by = h(px, bz);
+        put(G.block(), '#2b2f36', CHARSET.WALL, px, by, bz, 16, 0.9, 1.6);
+        solid(box(px, bz, 8, 0.8, 0, 0.9, by));
+        for (const dx of [-4, 4]) {
+          const ax = px + dx, az = bz - 2.2;
+          put(G.cylinder(), '#ff8c42', CHARSET.GOLD, ax, by, az, 0.55, 0.8, 0.55);
+          put(G.block(), '#ff8c42', CHARSET.GOLD, ax, by + 0.8, az + 0.6, 0.35, 2.6, 0.35, { rx: 0.45 });
+          put(G.block(), '#ff8c42', CHARSET.GOLD, ax, by + 3.0, az + 1.7, 0.3, 1.8, 0.3, { rx: 1.9 });
+          solid(circle(ax, az, 0.6, 3.5, by));
+        }
+      }
+      // Film rolls stacked north of the yard.
+      for (let i = 0; i < 3; i++) {
+        const fx = mx - 4 + i * 4, fz = mz - 18;
+        if (!isClear(fx, fz, 1.6, 1)) continue;
+        const fy = h(fx, fz);
+        put(G.cylinder(), '#e8f1f7', CHARSET.WALL, fx, fy + 0.9, fz - 1.4, 0.9, 2.8, 0.9, { rx: Math.PI / 2 });
+        if (i < 2) put(G.cylinder(), '#d6e6f2', CHARSET.WALL, fx + 2, fy + 2.5, fz - 1.4, 0.8, 2.8, 0.8, { rx: Math.PI / 2 });
+        solid(circle(fx, fz, 1.2, 3.3, fy));
+      }
+    }
+    // Conveyor slats across the road on boost strips (flat, bright).
+    for (const b of map.boosts ?? []) {
+      const tr = trail(b.trail);
+      if (!tr) continue;
+      for (let d = b.from; d <= b.to; d += 1.6) {
+        const p = pointAt(tr.path, tr.cum, d);
+        put(G.block(), '#b38cff', CHARSET.GOLD, p.x, h(p.x, p.z) + 0.04, p.z, tr.width * 0.8, 0.05, 0.4,
+          { yaw: Math.atan2(p.tx, p.tz), shadow: false });
+      }
+    }
+  }
+
   // --- Scatter (trees, rocks) -----------------------------------------------------
   const KINDS = {
     conifer(x, z, rand) {
@@ -829,7 +879,8 @@ export function buildWorld(scene, map) {
         if (h(x, z) < 1.5 || terrain.normalAt(x, z, nrm).y < 0.88) continue;
         if (!isClear(x, z, 0.6, 1.5)) continue;
         const y = h(x, z);
-        put(G.block(), rand() < 0.5 ? '#4f7f3a' : '#5d8a3c', CHARSET.FOLIAGE, x, y - 0.1, z, 0.7, 1.1 + rand() * 0.25, 1.5, { yaw: vy.yaw, shadow: false });
+        const [c0, c1] = vy.colors ?? ['#4f7f3a', '#5d8a3c'];
+        put(G.block(), rand() < 0.5 ? c0 : c1, CHARSET.FOLIAGE, x, y - 0.1, z, 0.7, (vy.height ?? 1.1) + rand() * 0.25, 1.5, { yaw: vy.yaw, shadow: false });
         occupied.insert(circle(x, z, 0.6, 1.3, y)); // keeps trees out of the rows (no collider: drive through)
       }
     }

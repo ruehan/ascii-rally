@@ -18,6 +18,7 @@ import { createUI } from './ui/ui.js';
 import { createParticles } from './fx/particles.js';
 import { createAudio } from './fx/audio.js';
 import { createLoop24 } from './game/loop24.js';
+import { createBoosts } from './game/boosts.js';
 import { sampleTime } from './render/timeOfDay.js';
 import { milestones } from './content/content.js';
 import { buildMapGrid } from './ui/mapGrid.js';
@@ -94,6 +95,7 @@ const unlockAudio = () => audio.unlock();
 window.addEventListener('keydown', unlockAudio, { once: true });
 window.addEventListener('pointerdown', unlockAudio, { once: true });
 
+const boosts = createBoosts(map.boosts, terrain.trails);
 const loop24 = createLoop24({ route: world.route, start: map.loop24.start, startHour: map.loop24.startHour, milestones, bus });
 
 // Time of day: the 24H session drives the clock; otherwise a preset (T cycles).
@@ -287,6 +289,7 @@ const loop = createLoop({
   step(h) {
     physics.setIntents(vehicle, devIntents ?? readIntents(input.state));
     physics.step(h);
+    boosts.apply(vehicle, h);
     zones.update(h, vehicle);
     stages.update(h, vehicle);
     loop24.update(h, vehicle);

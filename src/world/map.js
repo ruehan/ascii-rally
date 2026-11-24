@@ -11,12 +11,13 @@ import snow from './regions/snow.js';
 import desert from './regions/desert.js';
 import keti from './regions/keti.js';
 import zeroone from './regions/zeroone.js';
+import moisten from './regions/moisten.js';
 
 /**
  * Regions are concatenated in order. Terrain features apply in type order
  * (see terrain.js), so region order only matters within a type.
  */
-const regions = [world, core, gp, highway, snow, desert, keti, zeroone];
+const regions = [world, core, gp, highway, snow, desert, keti, zeroone, moisten];
 const all = key => regions.flatMap(r => r[key] ?? []);
 
 export default {
@@ -36,6 +37,7 @@ export default {
   stages: all('stages'),
   scatter: all('scatter'),
   vineyards: all('vineyards'),
+  boosts: all('boosts'),
   biomes: all('biomes'),
   patches: all('patches'),
 
