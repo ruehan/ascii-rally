@@ -26,7 +26,7 @@ export class CarView {
       return beam;
     });
     this.beamCount = 2;
-    this.tailGlow = new THREE.PointLight('#ff2a1a', 0, 4.5, 2);
+    this.tailGlow = new THREE.PointLight('#ff2a1a', 0, 3.5, 2);
     this.object.add(this.tailGlow);
 
     this.model = new THREE.Group();
@@ -94,9 +94,9 @@ export class CarView {
     this.beams.forEach((beam, i) => { beam.intensity = i < this.beamCount ? (this.beamCount === 1 ? 60 : 36) * k : 0; });
     this.lampMat.emissiveIntensity = 1.5 * k;
     this.tailMat.emissiveIntensity = 1.2 * k + 3 * brake;
-    // Tail lights tint the road behind: faint when running, stronger on the brakes
-    // (in daylight only a hint of it shows).
-    this.tailGlow.intensity = 1.3 * k + 4.5 * brake * (0.2 + 0.8 * k);
+    // Tail lights barely tint the road behind — a hint at night, a little
+    // more on the brakes; kept just above invisible on purpose.
+    this.tailGlow.intensity = 0.35 * k + 1.1 * brake * (0.2 + 0.8 * k);
   }
 
   /** Squash the body (landings). */
