@@ -66,7 +66,7 @@ export default {
     { id: 'pitwall', title: 'PIT WALL', path: '~/pit-wall', content: 'contact', pos: [26, 158], r: 8, surface: 'pad' },
     { id: 'piazza', title: 'RALLY HQ', path: '~/old-town/hq', content: 'hq', pos: [95, 10], r: 14, y: 16, surface: 'cobble' },
     { id: 'lookout', title: 'LOOKOUT', path: '~/coast/lookout', content: 'about', pos: [-122, -163], r: 7, surface: 'pad' },
-    { id: 'skidpad', title: 'SKIDPAD', path: '~/skidpad', content: null, pos: [46, -76], r: 25, surface: 'asphalt' },
+    // (The old skidpad is now the KETI campus dial, see regions/keti.js.)
   ],
 
   // Special stages (SS1 = this site; careers have their own regions). Ranges are metres along a trail (driven in

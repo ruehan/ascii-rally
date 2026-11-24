@@ -39,6 +39,7 @@ export function L(v) {
 
 /** Zone name in the current language (English: the zone's own title). */
 export function zoneName(zone) {
+  if (zone.label) return L(zone.label); // explicit { en, ko } (e.g. names with acronyms)
   return (lang === 'ko' && STR.ko[`zone.${zone.id}`]) || zone.title.toLowerCase();
 }
 

@@ -203,8 +203,9 @@ export function buildWorld(scene, map) {
   /** True if a rotated w×d footprint is off roads/pads (by margin) and free of placed objects. */
   const boxClear = (x, z, w, d, yaw, margin = 0.3) => {
     const c = Math.cos(yaw), s = Math.sin(yaw);
-    for (let i = 0; i <= 4; i++) for (let j = 0; j <= 4; j++) {
-      const lx = (i / 4 - 0.5) * w, lz = (j / 4 - 0.5) * d;
+    const ni = Math.max(4, Math.ceil(w)), nj = Math.max(4, Math.ceil(d)); // ~1 m sample spacing
+    for (let i = 0; i <= ni; i++) for (let j = 0; j <= nj; j++) {
+      const lx = (i / ni - 0.5) * w, lz = (j / nj - 0.5) * d;
       const px = x + lx * c + lz * s, pz = z - lx * s + lz * c;
       if (surfaces.insideAt(px, pz) > -margin) return false;
       for (const o of occupied.query(px, pz, 0.3)) if (circleContact(o, px, pz, 0.3, _c)) return false;
@@ -629,6 +630,75 @@ export function buildWorld(scene, map) {
     }
   }
 
+  // --- Career 1: KETI research campus ------------------------------------------------
+  // Watch-face plaza (hour markers, hands that follow the in-game clock), glass
+  // lab blocks to the north, an antenna mast and a heart-rate board.
+  const dialHands = [];
+  {
+    const zk = zone('keti');
+    if (zk) {
+      const [cx, cz] = zk.pos;
+      const y = h(cx, cz);
+      // Hour markers painted on the plaza (flat, drive-over).
+      for (let i = 0; i < 12; i++) {
+        const a = (i / 12) * Math.PI * 2;
+        const big = i % 3 === 0;
+        const r = zk.r - 4;
+        const mx = cx + Math.sin(a) * r, mz = cz - Math.cos(a) * r;
+        put(G.block(), big ? '#ffd166' : '#f2f2f2', CHARSET.GOLD, mx, h(mx, mz) + 0.05, mz,
+          big ? 1.6 : 0.9, 0.18, big ? 4 : 2.4, { yaw: -a, shadow: false });
+      }
+      // Hands: real meshes, turned every frame in update().
+      const hand = (len, wid, color) => {
+        const m = new THREE.Mesh(new THREE.BoxGeometry(wid, 0.2, len).translate(0, 0.1, -len / 2), material(color));
+        m.position.set(cx, y + 0.3 + dialHands.length * 0.12, cz); // above the PULSE road crossing the dial
+        m.receiveShadow = true;
+        setCharset(m, CHARSET.GOLD);
+        scene.add(m);
+        dialHands.push(m);
+      };
+      hand(zk.r * 0.5, 2.2, '#ffd166'); // hour
+      hand(zk.r * 0.78, 1.2, '#f2f2f2'); // minute
+      put(G.cylinder(), '#2b2b2b', CHARSET.GLYPH, cx, y, cz, 1.6, 0.6, 1.6, { shadow: false });
+
+      // Glass lab blocks (north), skipped if a road is in the way.
+      const lab = (x, z, w, d, hgt) => {
+        if (!boxClear(x, z, w, d, 0, 0.8)) return false;
+        const { lo } = footprint(x, z, w / 2, d / 2, 0);
+        put(G.block(), '#8fb8d0', CHARSET.WALL, x, lo - 0.4, z, w, hgt + 0.4, d, { cut: true });
+        put(G.block(), '#eef3f6', CHARSET.WALL, x, lo + hgt, z, w + 0.4, 0.4, d + 0.4, { cut: true });
+        windows(x, z, 0, w, d, lo, Math.floor(hgt / 3), rng(Math.round(x * 13 + z)));
+        solid(box(x, z, w / 2, d / 2, 0, hgt + 0.4, lo - 0.4));
+        return true;
+      };
+      lab(90, -104, 16, 9, 9);
+      if (lab(123, -105, 18, 10, 12)) {
+        // Antenna mast on the main lab.
+        const ry = h(123, -105) + 12.4;
+        put(G.cylinder(), '#c9ccd2', CHARSET.WALL, 129, ry, -107, 0.15, 9, 0.15, { shadow: false });
+        put(G.ball(), '#ff4d6d', CHARSET.GOLD, 129, ry + 9.2, -107, 0.35, 0.35, 0.35, { shadow: false });
+      }
+      lab(152, -103, 13, 8, 8);
+
+      // Heart-rate board facing the dial from the south, a glowing ECG trace.
+      const bx = cx, bz = cz + zk.r + 6, by = h(bx, bz);
+      const beat = new THREE.MeshStandardMaterial({ color: '#3a1018', emissive: '#ff4d6d', emissiveIntensity: 1.2, flatShading: true });
+      for (const dx of [-6.5, 6.5]) {
+        put(G.block(), '#2b2b2b', CHARSET.GLYPH, bx + dx, by, bz, 0.4, 5.5, 0.4);
+        solid(circle(bx + dx, bz, 0.4, 5.5, by));
+      }
+      put(G.block(), '#14181c', CHARSET.GLYPH, bx, by + 2.2, bz, 13.6, 3.4, 0.3);
+      const wave = [[-6, 0], [-3.4, 0], [-3, 0.3], [-2.6, 0], [-1.6, 0], [-1.2, -0.4], [-0.6, 1.4], [0, -0.8], [0.4, 0], [1.8, 0], [2.4, 0.4], [3, 0], [6, 0]];
+      for (let i = 0; i < wave.length - 1; i++) {
+        const [x0, y0] = wave[i], [x1, y1] = wave[i + 1];
+        const len = Math.hypot(x1 - x0, y1 - y0);
+        _m.compose(_p.set(bx + (x0 + x1) / 2, by + 3.6 + (y0 + y1) / 2, bz - 0.2),
+          _q.setFromEuler(_e.set(0, 0, Math.atan2(y1 - y0, x1 - x0))), _s.set(len, 0.18, 0.1));
+        inst.add(G.box(), beat, CHARSET.GOLD, _m, { castShadow: false });
+      }
+    }
+  }
+
   // --- Scatter (trees, rocks) -----------------------------------------------------
   const KINDS = {
     conifer(x, z, rand) {
@@ -735,6 +805,11 @@ export function buildWorld(scene, map) {
       if (look) {
         seaMat.emissive.copy(look.sky).multiplyScalar(look.night ? 0.24 : 0.12);
         windowLit.emissiveIntensity = look.lights * 1.8; // dusk → night
+        // KETI dial: hands show the in-game time (12 at north, clockwise).
+        if (dialHands.length) {
+          dialHands[0].rotation.y = -((look.hour % 12) / 12) * Math.PI * 2;
+          dialHands[1].rotation.y = -((look.hour % 1)) * Math.PI * 2;
+        }
       }
     },
   };

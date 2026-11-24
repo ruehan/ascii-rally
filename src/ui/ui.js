@@ -157,6 +157,14 @@ export function createUI({ bus, stages, onPanel, getCar }) {
       open(t('hq.title'), `<p>${t('hq.intro', { car: esc(CARS[car].name) })}</p>${html}`);
       return;
     }
+    if (zone.content === 'career') {
+      // The career card itself (the stage result shows it too, with times).
+      const p = projectOf({ career: zone.career });
+      open(`$ cat ~/career/${zone.id}`, `<p class="big">${esc(p.title)}</p>${renderLines([
+        { h: p.heading }, ...p.rows.map(([k, v]) => ({ k, v })), ...p.summary, ...p.links,
+      ])}`);
+      return;
+    }
     const data = panels[zone.content];
     if (!data) return;
     if (zone.content === 'skills') {
