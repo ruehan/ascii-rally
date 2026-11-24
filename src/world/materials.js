@@ -7,14 +7,15 @@ import { groundLight, GROUND_LIGHT_GLSL } from '../render/groundLight.js';
 // so meshes with the same look share a material and can be instanced.
 //   cutaway  lets the object turn see-through where it hides the car
 //   sway     [A, B]: the plant moves with the wind (see render/sway.js)
+//   vertexColors  colours come from the geometry (merged models: cars)
 // Every material also catches the night light pools (render/groundLight.js).
 const cache = new Map();
 
-export function material(color, { flatShading = true, cutaway = false, sway = null } = {}) {
-  const key = `${new THREE.Color(color).getHexString()}|${flatShading}|${cutaway}|${sway ? sway.join(',') : ''}`;
+export function material(color, { flatShading = true, cutaway = false, sway = null, vertexColors = false } = {}) {
+  const key = `${new THREE.Color(color).getHexString()}|${flatShading}|${cutaway}|${sway ? sway.join(',') : ''}|${vertexColors}`;
   let m = cache.get(key);
   if (!m) {
-    m = new THREE.MeshStandardMaterial({ color, flatShading });
+    m = new THREE.MeshStandardMaterial({ color, flatShading, vertexColors });
     if (cutaway) applyCutaway(m);
     if (sway) m.userData.sway = sway;
     const base = m.onBeforeCompile;

@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import { CHARSET, setCharset } from '../render/charsets.js';
-import { material } from '../world/materials.js';
-import { buildCarModel } from './models.js';
+import { buildCarModel, buildWheel } from './models.js';
 import { DEFAULT_CAR } from './cars.js';
 
 /**
@@ -34,29 +33,30 @@ export class CarView {
 
   setModel(id) {
     this.id = id;
+    this.model.traverse(o => { if (o.isMesh) o.geometry.dispose(); });
     this.model.clear();
-    const m = buildCarModel(id, this.model);
-
-    const lamp = new THREE.Mesh(new THREE.BoxGeometry(m.width, 0.18, 0.08), this.lampMat);
-    lamp.position.set(...m.lamp);
-    const tail = new THREE.Mesh(new THREE.BoxGeometry(Math.max(0.3, m.width), 0.16, 0.08), this.tailMat);
-    tail.position.set(...m.tail);
-    this.model.add(lamp, tail);
+    // Body, lamps and lenses squash together on landings; wheels stay round.
+    this.body = new THREE.Group();
+    this.model.add(this.body);
+    const m = buildCarModel(id, this.body);
+    for (const [list, mat] of [[m.lamps, this.lampMat], [m.tails, this.tailMat]]) {
+      for (const [x, y, z, w, h] of list) {
+        const lens = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.08), mat);
+        lens.position.set(x, y, z);
+        this.body.add(lens);
+      }
+    }
     this.headlight.position.set(m.lamp[0], m.lamp[1] + 0.2, m.lamp[2]);
 
     this.wheels = [];
-    const wheelMat = material('#2b2b2b');
     for (const w of m.wheels) {
-      const geo = new THREE.CylinderGeometry(w.r, w.r, w.w, 10).rotateZ(Math.PI / 2);
       const pivot = new THREE.Group();
       pivot.position.set(w.x, w.r, w.z);
-      const mesh = new THREE.Mesh(geo, wheelMat);
-      mesh.castShadow = true;
+      const mesh = buildWheel(w, m.rim);
       pivot.add(mesh);
       this.model.add(pivot);
       this.wheels.push({ pivot, mesh, front: w.z < 0, r: w.r, x: w.x, z: w.z });
     }
-    this.body = [...m.parts, lamp];
     setCharset(this.model, CHARSET.CAR);
   }
 
@@ -100,7 +100,7 @@ export class CarView {
     this.squashV += (-120 * this.squash - 12 * this.squashV) * dt;
     this.squash += this.squashV * dt;
     const sy = Math.max(0.6, 1 + this.squash);
-    for (const b of this.body) b.scale.y = sy;
+    this.body.scale.y = sy;
 
     for (const w of this.wheels) {
       w.mesh.rotation.x -= (v.speed * dt) / w.r;
