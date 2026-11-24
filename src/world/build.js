@@ -630,6 +630,9 @@ export function buildWorld(scene, map) {
     }
   }
 
+  // Per-frame animations for props (blinking lights, moving machines...).
+  const animators = [];
+
   // --- Career 1: KETI research campus ------------------------------------------------
   // Watch-face plaza (hour markers, hands that follow the in-game clock), glass
   // lab blocks to the north, an antenna mast and a heart-rate board.
@@ -660,6 +663,25 @@ export function buildWorld(scene, map) {
       hand(zk.r * 0.5, 2.2, '#ffd166'); // hour
       hand(zk.r * 0.78, 1.2, '#f2f2f2'); // minute
       put(G.cylinder(), '#2b2b2b', CHARSET.GLYPH, cx, y, cz, 1.6, 0.6, 1.6, { shadow: false });
+      // Bezel: a dark ring painted at the plaza's rim with 60 minute ticks.
+      for (let i = 0; i < 60; i++) {
+        const a = (i / 60) * Math.PI * 2, r = zk.r - 1.2;
+        const bx = cx + Math.sin(a) * r, bz = cz - Math.cos(a) * r;
+        put(G.block(), '#1d2127', CHARSET.WALL, bx, h(bx, bz) + 0.03, bz, 2.7, 0.08, 2.2, { yaw: -a, shadow: false });
+        if (i % 5) {
+          const tr = zk.r - 1.2;
+          put(G.block(), '#d6dde3', CHARSET.GOLD, cx + Math.sin(a) * tr, h(bx, bz) + 0.12, cz - Math.cos(a) * tr, 0.25, 0.05, 1.1, { yaw: -a, shadow: false });
+        }
+      }
+      // Crown at 2 o'clock (with two pushers either side), just outside the rim.
+      for (const [ang, len, rad] of [[Math.PI / 3, 3.2, 1.4], [Math.PI / 3 - 0.22, 1.6, 0.55], [Math.PI / 3 + 0.22, 1.6, 0.55]]) {
+        const r = zk.r + len / 2;
+        const kx = cx + Math.sin(ang) * r, kz = cz - Math.cos(ang) * r;
+        if (!isClear(kx, kz, rad, 0.5)) continue;
+        put(G.cylinder(), '#c9ccd2', CHARSET.WALL, kx - Math.sin(ang) * len / 2, h(kx, kz) + rad, kz + Math.cos(ang) * len / 2,
+          rad, len, rad, { yaw: -ang, rx: Math.PI / 2 });
+        solid(circle(kx, kz, rad, rad * 2, h(kx, kz)));
+      }
 
       // Glass lab blocks (north), skipped if a road is in the way.
       const lab = (x, z, w, d, hgt) => {
@@ -676,13 +698,50 @@ export function buildWorld(scene, map) {
         // Antenna mast on the main lab.
         const ry = h(123, -105) + 12.4;
         put(G.cylinder(), '#c9ccd2', CHARSET.WALL, 129, ry, -107, 0.15, 9, 0.15, { shadow: false });
-        put(G.ball(), '#ff4d6d', CHARSET.GOLD, 129, ry + 9.2, -107, 0.35, 0.35, 0.35, { shadow: false });
+        const lamp = new THREE.Mesh(G.ball(), new THREE.MeshStandardMaterial({ color: '#40121a', emissive: '#ff4d6d', emissiveIntensity: 0 }));
+        lamp.position.set(129, ry + 9.2, -107);
+        lamp.scale.setScalar(0.4);
+        setCharset(lamp, CHARSET.GOLD);
+        scene.add(lamp);
+        animators.push((dt, t) => { lamp.material.emissiveIntensity = (t % 1.4) < 0.25 ? 2.2 : 0.1; }); // aircraft-warning blink
       }
       lab(152, -103, 13, 8, 8);
+
+      // Campus walk: a row of round trees between the labs and the road.
+      const roundTree = (x, z, rand) => {
+        if (!isClear(x, z, 1.4, 1.5)) return;
+        const y = h(x, z), s = 1.1 + rand() * 0.4;
+        put(G.trunk(), '#5a4030', CHARSET.WOOD, x, y, z, 0.8, 1.6, 0.8);
+        put(G.ball(), rand() < 0.5 ? '#4f8a4a' : '#5c9850', CHARSET.FOLIAGE, x, y + 1.6 + s, z, s, s * 1.1, s, { cut: true });
+        solid(circle(x, z, 0.4, 3.5, y));
+      };
+      const trand = rng(4242);
+      for (let x = 78; x <= 166; x += 7) roundTree(x, -95 + (trand() - 0.5) * 1.5, trand);
+
+      // Staff car park: painted bays and a few parked cars, wherever it fits.
+      for (const [px, pz] of [[18, -104], [150, -54], [84, -52]]) {
+        if (!boxClear(px, pz, 18, 11, 0, 1.2)) continue;
+        const py = h(px, pz);
+        put(G.block(), '#4a4f57', CHARSET.FLOOR, px, py - 0.05, pz, 18, 0.12, 11, { shadow: false });
+        const crand = rng(px * 7 + 3);
+        for (let i = 0; i < 6; i++) {
+          const bx = px - 7.5 + i * 3;
+          put(G.block(), '#e6e6e6', CHARSET.GOLD, bx - 1.5, py + 0.03, pz - 2.5, 0.12, 0.05, 4.5, { shadow: false });
+          if (crand() < 0.65) {
+            const col = ['#d9483b', '#3f6fb5', '#e8e8e8', '#2b2b2b', '#c9a227'][Math.floor(crand() * 5)];
+            put(G.block(), col, CHARSET.CAR, bx, py, pz - 2.5, 1.7, 1.2, 3.8);
+            put(G.block(), '#20262e', CHARSET.CAR, bx, py + 1.2, pz - 2.7, 1.5, 0.5, 2);
+            solid(box(bx, pz - 2.5, 0.85, 1.9, 0, 1.7, py));
+          }
+        }
+        break;
+      }
 
       // Heart-rate board facing the dial from the south, a glowing ECG trace.
       const bx = cx, bz = cz + zk.r + 6, by = h(bx, bz);
       const beat = new THREE.MeshStandardMaterial({ color: '#3a1018', emissive: '#ff4d6d', emissiveIntensity: 1.2, flatShading: true });
+      // The trace pulses at ~72 bpm: a sharp flash that decays.
+      animators.push((dt, t) => { const ph = (t * 1.2) % 1; beat.emissiveIntensity = 0.35 + 2.2 * Math.exp(-ph * 9); });
       for (const dx of [-6.5, 6.5]) {
         put(G.block(), '#2b2b2b', CHARSET.GLYPH, bx + dx, by, bz, 0.4, 5.5, 0.4);
         solid(circle(bx + dx, bz, 0.4, 5.5, by));
@@ -913,6 +972,7 @@ export function buildWorld(scene, map) {
       if (look) {
         seaMat.emissive.copy(look.sky).multiplyScalar(look.night ? 0.24 : 0.12);
         windowLit.emissiveIntensity = look.lights * 1.8; // dusk → night
+        for (const fn of animators) fn(dt, t, look);
         // KETI dial: hands show the in-game time (12 at north, clockwise).
         if (dialHands.length) {
           dialHands[0].rotation.y = -((look.hour % 12) / 12) * Math.PI * 2;
