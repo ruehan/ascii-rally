@@ -76,14 +76,17 @@ class Pool {
       const p = items[i];
       p.age += dt;
       if (p.age >= p.life) continue;
-      p.vx *= 1 - p.drag * dt;
-      p.vz *= 1 - p.drag * dt;
+      // Drag pulls the velocity toward the wind (still air unless given).
+      p.vx += ((p.wx ?? 0) - p.vx) * Math.min(1, p.drag * dt);
+      p.vz += ((p.wz ?? 0) - p.vz) * Math.min(1, p.drag * dt);
       p.vy += (p.gravity - p.vy * p.drag) * dt;
       p.x += p.vx * dt;
       p.y += p.vy * dt;
       p.z += p.vz * dt;
       const t = p.age / p.life;
-      const s = p.size * Math.sin(Math.PI * Math.min(1, t * 1.6 + 0.15)) * (1 - t * 0.4);
+      // Puffs swell then shrink; "steady" motes keep their size, easing in and out.
+      const s = p.steady ? p.size * Math.min(1, t * 8, (1 - t) * 8)
+        : p.size * Math.sin(Math.PI * Math.min(1, t * 1.6 + 0.15)) * (1 - t * 0.4);
       m.makeScale(s, s, s).setPosition(p.x, p.y, p.z);
       mesh.setMatrixAt(n, m);
       mesh.setColorAt(n, c.set(p.color));
@@ -103,6 +106,9 @@ const DUST_COLORS = {
 export function createParticles(scene) {
   const dust = new Pool(scene, 260, CHARSET.DIRT);
   const spray = new Pool(scene, 120, CHARSET.TILDE);
+  // Weather: snowflakes, blown sand, fireflies (see ambient()).
+  const flakes = new Pool(scene, 300, CHARSET.SNOW);
+  const air = { snow: 0, sand: 0, fly: 0 };
   const rnd = (a, b) => a + Math.random() * (b - a);
   let carry = 0;
 
@@ -163,9 +169,57 @@ export function createParticles(scene) {
       }
     },
 
+    /**
+     * Weather around a point (the camera's focus): snow falls in the snow
+     * biome, sand blows low across the desert, fireflies drift over
+     * temperate ground at night. `radius` widens with the overview camera.
+     */
+    ambient(dt, x, z, heightAt, { snow = 0, desert = 0, night = 0, radius = 24 } = {}) {
+      const spot = () => {
+        const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * radius;
+        return [x + Math.cos(a) * r, z + Math.sin(a) * r];
+      };
+      const wide = Math.min(1.6, radius / 24), big = Math.sqrt(radius / 24);
+      air.snow += snow * 70 * wide * dt;
+      while (air.snow >= 1) {
+        air.snow -= 1;
+        const [px, pz] = spot();
+        const fall = rnd(1.6, 2.4), top = rnd(2, 6.5); // low: flakes near the camera would loom
+        flakes.spawn({
+          x: px, y: heightAt(px, pz) + top, z: pz, vx: 1.2, vy: -fall, vz: 0.4, wx: rnd(0.8, 2.2), wz: rnd(-0.4, 1),
+          gravity: -fall * 1.2, drag: 1.2, size: rnd(0.1, 0.17) * big, life: top / fall, age: 0, steady: true,
+          color: '#ffffff',
+        });
+      }
+      air.sand += desert * 16 * wide * dt;
+      while (air.sand >= 1) {
+        air.sand -= 1;
+        const [px, pz] = spot();
+        const gust = rnd(5, 9);
+        dust.spawn({
+          x: px, y: heightAt(px, pz) + rnd(0.2, 1.2), z: pz, vx: gust, vy: rnd(0, 0.6), vz: gust * 0.4, wx: gust, wz: gust * 0.4,
+          gravity: 0, drag: 0.8, size: rnd(0.3, 0.6) * big, life: rnd(1.2, 2.2), age: 0,
+          color: '#efdcae',
+        });
+      }
+      air.fly += night * Math.max(0, 1 - snow - desert) * 5 * wide * dt;
+      while (air.fly >= 1) {
+        air.fly -= 1;
+        const [px, pz] = spot();
+        const y = heightAt(px, pz);
+        if (y < 1) continue; // not over the sea
+        flakes.spawn({
+          x: px, y: y + rnd(0.6, 2.2), z: pz, vx: rnd(-0.6, 0.6), vy: rnd(-0.1, 0.25), vz: rnd(-0.6, 0.6), wx: rnd(-0.5, 0.5), wz: rnd(-0.5, 0.5),
+          gravity: 0, drag: 0.5, size: 0.17 * big, life: rnd(2, 4), age: 0, steady: true,
+          color: '#e6ff8a',
+        });
+      }
+    },
+
     update(dt) {
       dust.update(dt);
       spray.update(dt);
+      flakes.update(dt);
     },
   };
 }

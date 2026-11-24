@@ -16,6 +16,7 @@ import { createZoneSystem } from './game/zones.js';
 import { createStageSystem } from './game/stages.js';
 import { createUI } from './ui/ui.js';
 import { createParticles } from './fx/particles.js';
+import { createSkidMarks } from './fx/skids.js';
 import { createAudio } from './fx/audio.js';
 import { createLoop24 } from './game/loop24.js';
 import { createBoosts } from './game/boosts.js';
@@ -88,6 +89,7 @@ function selectCar(id) {
 }
 bus.on('car:select', ({ id }) => selectCar(id));
 const particles = createParticles(scene);
+const skids = createSkidMarks(scene, { heightAt: terrain.heightAt });
 const audio = createAudio();
 const wheels = [[0, 0, 0], [0, 0, 0]];
 
@@ -379,6 +381,12 @@ const loop = createLoop({
     { const it = devIntents ?? readIntents(input.state); car.setBrake(it.brake > 0 || it.handbrake > 0, dt); }
 
     particles.drive(dt, car.rearWheels(wheels), vehicle);
+    skids.update(wheels, vehicle, devIntents ?? readIntents(input.state));
+    // Weather follows the biome under the view: snow, blown sand, fireflies at night.
+    {
+      const f = rig.focus, b = world.biomes.biomeAt(f.x, f.z, terrain.heightAt(f.x, f.z));
+      particles.ambient(dt, f.x, f.z, terrain.heightAt, { snow: b.snow, desert: b.desert, night: look.lights, radius: 24 + ovR * 0.9 });
+    }
     particles.update(dt);
     audio.update(dt, vehicle, (devIntents ?? readIntents(input.state)).throttle);
     lighting.follow(rig.focus); // shadows stay sharp around what the view is about
