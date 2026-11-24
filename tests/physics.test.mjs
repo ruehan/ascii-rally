@@ -149,3 +149,31 @@ console.log('all physics tests passed');
   assert.ok(Math.abs(vb.pitch) < 1e-6, 'the wheels stay flat on flat ground');
   console.log('realism checks passed');
 }
+
+// --- Moving obstacles (traffic) ----------------------------------------------
+{
+  const { box } = await import('../src/physics/shapes.js');
+  const p = new ArcadePhysics({});
+  const v = p.createVehicle({ pos: [0, 0], heading: 0 });
+  // A box driving towards the parked car from ahead (the car faces -z).
+  const body = { shape: box(0, -8, 1, 2.2, 0, 1.5, 0), vx: 0, vz: 5, hits: 0, onHit(speed) { this.hits++; this.speed = speed; } };
+  p.addDynamic(body);
+  p.setIntents(v, { handbrake: 0 });
+  for (let i = 0; i < 120; i++) { body.shape.z += body.vz / 120; p.step(1 / 120); }
+  assert.ok(body.hits > 0 && body.speed > 3, `the moving box hits the parked car (${body.speed?.toFixed(1)} m/s)`);
+  assert.ok(v.z > 0.3 && v.hit !== undefined, `and shoves it back (${v.z.toFixed(2)} m)`);
+  const gap = Math.abs(v.z - body.shape.z);
+  assert.ok(gap >= 2.2 + v.radius - 0.05, `no overlap left (${gap.toFixed(2)} m)`);
+  // Driving into a stopped obstacle: the car bounces off, the obstacle is told.
+  const p2 = new ArcadePhysics({});
+  const v2 = p2.createVehicle({ pos: [0, 0], heading: 0 });
+  const wall = { shape: box(0, -12, 1, 2.2, 0, 1.5, 0), vx: 0, vz: 0, onHit(speed) { this.speed = speed; } };
+  p2.addDynamic(wall);
+  p2.setSpeed(v2, 12);
+  let hit = 0;
+  for (let i = 0; i < 240; i++) { p2.step(1 / 120); hit = Math.max(hit, v2.hit); }
+  assert.ok(hit > 5 && wall.speed > 5, `crash registers on both (${hit.toFixed(1)} m/s)`);
+  assert.ok(v2.z > -12 + 2.2, 'car stays outside the obstacle');
+  console.log('moving obstacle checks passed');
+}
+

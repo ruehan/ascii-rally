@@ -20,6 +20,7 @@ import { createSkidMarks } from './fx/skids.js';
 import { createAudio } from './fx/audio.js';
 import { createLoop24 } from './game/loop24.js';
 import { createBoosts } from './game/boosts.js';
+import { createTraffic } from './game/traffic.js';
 import { sampleTime } from './render/timeOfDay.js';
 import { milestones } from './content/content.js';
 import { buildMapGrid } from './ui/mapGrid.js';
@@ -90,6 +91,9 @@ function selectCar(id) {
 bus.on('car:select', ({ id }) => selectCar(id));
 const particles = createParticles(scene);
 const skids = createSkidMarks(scene, { heightAt: terrain.heightAt });
+// Traffic on the public roads (and the career places' trucks): moving colliders.
+const traffic = createTraffic({ scene, terrain, physics, patrols: world.patrols, bus });
+bus.on('traffic:horn', () => audio.horn());
 const audio = createAudio();
 const wheels = [[0, 0, 0], [0, 0, 0]];
 
@@ -317,6 +321,8 @@ let devIntents = null; // dev-only override (see window.__stage.drive)
 const loop = createLoop({
   step(h) {
     physics.setIntents(vehicle, devIntents ?? readIntents(input.state));
+    // A road is closed to traffic while its special stage is on.
+    traffic.step(h, vehicle, stages.state === 'idle' || stages.state === 'near' ? null : stages.active?.trail.id);
     physics.step(h);
     boosts.apply(vehicle, h);
     zones.update(h, vehicle);
@@ -348,6 +354,7 @@ const loop = createLoop({
     perf.begin();
     if (settings.get('quality') === 'auto') quality.frame(dt);
     car.sync(vehicle, alpha, dt);
+    traffic.render(alpha, look.lights);
     if (rig.inOverview) {
       const it = devIntents ?? readIntents(input.state);
       if (it.throttle || it.brake || it.steer || Math.abs(vehicle.speed) > 2) rig.overview(null);
@@ -417,7 +424,7 @@ requestAnimationFrame(() => requestAnimationFrame(async () => {
 // Dev-only handle for debugging / screenshots from the console.
 if (import.meta.env.DEV) {
   window.__stage = {
-    physics, vehicle, terrain, surfaces, stages, zones, renderer, loop24, ascii, scene, camera, rig,
+    physics, vehicle, terrain, surfaces, stages, zones, renderer, loop24, ascii, scene, camera, rig, traffic,
     /** GPU-synced render timing (ms per frame) for comparing renderer changes. */
     benchRender(n = 40) {
       const gl = renderer.getContext();

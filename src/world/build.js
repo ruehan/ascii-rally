@@ -736,27 +736,9 @@ export function buildWorld(scene, map) {
     return g;
   }
 
-  function patrol(route, { stops = [], cab = '#3c8c4a', box: boxColor = '#eef1f3', speed = 7 } = {}) {
-    const body = truckModel({ cab, box: boxColor });
-    scene.add(body);
-    const end = route.length - 4;
-    let s = 4, dir = 1, wait = 0;
-    animators.push(dt => {
-      if (wait > 0) wait -= dt;
-      else {
-        const next = stops.find(st => (dir > 0 ? st > s : st < s) && Math.abs(st - s) < 6);
-        const v = next !== undefined ? Math.max(1.5, Math.abs(next - s)) : speed;
-        const prev = s;
-        s += dir * Math.min(speed, v) * dt;
-        if (stops.some(st => (prev - st) * (s - st) <= 0 && prev !== st)) wait = 2.5; // stop at the bin
-        if (s > end || s < 4) { dir = -dir; s = Math.max(4, Math.min(end, s)); wait = 4; }
-      }
-      const p = pointAt(route.path, route.cum, s);
-      body.position.set(p.x - p.tz * 1.6 * dir, h(p.x, p.z), p.z + p.tx * 1.6 * dir); // keep right
-      body.rotation.y = Math.atan2(-p.tx * dir, -p.tz * dir); // cab (local −z) leads
-    });
-    return body;
-  }
+  // Scripted vehicles on the career roads (the collection truck, the plant's
+  // delivery truck): game/traffic.js drives them, with colliders.
+  const patrols = [];
 
   // --- Career 1: KETI research campus ------------------------------------------------
   // Watch-face plaza (hour markers, hands that follow the in-game clock), glass
@@ -1057,7 +1039,7 @@ export function buildWorld(scene, map) {
       }
 
       // A collection truck drives the route, stopping at each bin.
-      patrol(route, { stops: [70, 140, 210, 280, 340], cab: '#3c8c4a', box: '#eef1f3' });
+      patrols.push({ trail: route.id, model: 'truck', stops: [70, 140, 210, 280, 340], color: '#3c8c4a', box: '#eef1f3', speed: 7 });
     }
   }
 
@@ -1198,7 +1180,7 @@ export function buildWorld(scene, map) {
       }
       // A delivery van shuttles along the plant road.
       const plantRoad = trail('film');
-      if (plantRoad) patrol(plantRoad, { cab: '#b38cff', box: '#f3f5f7', speed: 9 });
+      if (plantRoad) patrols.push({ trail: plantRoad.id, model: 'truck', color: '#b38cff', box: '#f3f5f7', speed: 9 });
     }
 
     // Conveyor slats across the road on boost strips (flat, bright).
@@ -1356,7 +1338,7 @@ export function buildWorld(scene, map) {
   }
 
   return {
-    terrain, surfaces, surfaceAt, biomes, colliders, route, bounds: map.bounds, spawn: map.spawn, waterLevel: map.waterLevel,
+    terrain, surfaces, surfaceAt, biomes, colliders, route, patrols, bounds: map.bounds, spawn: map.spawn, waterLevel: map.waterLevel,
     /** Per-frame: sea ripples; at dusk/night the sea faintly reflects the sky. */
     update(dt, t, look) {
       seaTime.value = t;

@@ -57,8 +57,8 @@ export function shapes() {
     },
     ball(r, color, x, y, z) { push(new THREE.IcosahedronGeometry(r, 1), color, x, y, z); return api; },
     /** The merged mesh (vertex colours; catches lamp light like any prop). */
-    mesh() {
-      const mesh = new THREE.Mesh(mergeGeometries(geos), material('#ffffff', { vertexColors: true }));
+    mesh(mat = material('#ffffff', { vertexColors: true })) {
+      const mesh = new THREE.Mesh(mergeGeometries(geos), mat);
       mesh.castShadow = true;
       return mesh;
     },

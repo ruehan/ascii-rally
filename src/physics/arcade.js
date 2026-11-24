@@ -54,6 +54,7 @@ export class ArcadePhysics {
     this.terrain = terrain;
     this.gravity = gravity; // vertical (jump) gravity, a bit snappier than real
     this.statics = new SpatialHash(8);
+    this.dynamics = [];   // moving obstacles (traffic), see addDynamic()
     this.vehicles = [];
     this._contact = { nx: 0, nz: 0, depth: 0 };
     this._ground = { h: 0, pitch: 0, roll: 0 };
@@ -62,6 +63,18 @@ export class ArcadePhysics {
   addStatic(shape) {
     this.statics.insert(shape);
     return shape;
+  }
+
+  /**
+   * A moving obstacle the cars collide with but which isn't pushed around
+   * by the solver (its owner moves it): `{ shape, vx, vz, off?, onHit? }`.
+   * The owner keeps `shape` (x, z, rot, y) and the velocity up to date;
+   * `onHit(speed, dx, dz)` reports an impact (closing speed, direction the
+   * obstacle was struck in).
+   */
+  addDynamic(body) {
+    this.dynamics.push(body);
+    return body;
   }
 
   createVehicle({ pos = [0, 0], heading = 0, car = DEFAULT_CAR } = {}) {
@@ -375,6 +388,24 @@ export class ArcadePhysics {
         v.vx *= 0.8;
         v.vz *= 0.8;
         worst = Math.max(worst, -vn);
+      }
+    }
+    for (const b of this.dynamics) {
+      const s = b.shape;
+      if (b.off || Math.abs(s.x - v.x) > 9 || Math.abs(s.z - v.z) > 9) continue;
+      if (v.y > (s.y ?? 0) + s.h) continue;
+      if (!circleContact(s, v.x, v.z, v.radius, c)) continue;
+      v.x += c.nx * c.depth;
+      v.z += c.nz * c.depth;
+      // Closing speed relative to the obstacle's own motion.
+      const vn = (v.vx - b.vx) * c.nx + (v.vz - b.vz) * c.nz;
+      if (vn < 0) {
+        v.vx -= 1.3 * vn * c.nx;
+        v.vz -= 1.3 * vn * c.nz;
+        v.vx *= 0.85;
+        v.vz *= 0.85;
+        worst = Math.max(worst, -vn);
+        b.onHit?.(-vn, -c.nx, -c.nz);
       }
     }
     if (worst) {

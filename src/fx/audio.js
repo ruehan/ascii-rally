@@ -189,6 +189,8 @@ export function createAudio() {
     land(impact) { oneShot('sine', 110, 38, 0.3, Math.min(0.9, impact / 10)); },
     hit(amount) { oneShot('triangle', 160, 50, 0.18, Math.min(0.8, amount / 12)); },
     splash() { oneShot('sine', 600, 120, 0.5, 0.25); },
+    /** A car horn (two notes together), quieter with distance. */
+    horn(gain = 0.1) { oneShot('square', 415, 415, 0.32, gain); oneShot('square', 330, 330, 0.32, gain); },
     beep(go = false) { oneShot('square', go ? 1320 : 660, go ? 1320 : 660, go ? 0.45 : 0.18, 0.12); },
   };
 }
