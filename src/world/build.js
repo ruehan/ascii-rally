@@ -704,11 +704,10 @@ export function buildWorld(scene, map) {
   // parked collection trucks, and a wheelie bin at each pickup split.
   {
     const zd = zone('zeroone'), route = trail('collect');
-    const run = map.stages.find(st => st.id === 'c2');
-    if (zd && route && run) {
+    if (zd && route) {
       const screen = new THREE.MeshStandardMaterial({ color: '#0f2a1a', emissive: '#7bd389', emissiveIntensity: 0.9, flatShading: true });
-      // Bins at the pickups, on the right of the road.
-      for (const sp of run.splits) {
+      // Wheelie bins along the collection route, on the right of the road.
+      for (const sp of [70, 140, 210, 280, 340]) {
         const p = pointAt(route.path, route.cum, sp);
         const off = route.width / 2 + 1.6;
         const x = p.x - p.tz * off, z = p.z + p.tx * off, y = h(x, z);

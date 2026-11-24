@@ -2,8 +2,8 @@
  * Career 1 — KETI (healthcare wearable research), 2021–2023.
  * A research campus east of the home valley on the old skidpad: the plaza
  * is a giant watch face (hands follow the in-game clock), glass lab blocks
- * stand to the north, and the PULSE stage crosses the dial and leaves east
- * on a road drawn as a heartbeat (P bump, sharp QRS spike, T bump).
+ * stand to the north, and the campus road crosses the dial and leaves east
+ * drawn as a heartbeat (P bump, sharp QRS spike, T bump).
  */
 export const DIAL = { pos: [46, -76], r: 25 };
 
@@ -34,11 +34,6 @@ export default {
       pos: DIAL.pos, r: DIAL.r, surface: 'asphalt',
     },
   ],
-  stages: [
-    {
-      id: 'c1', name: 'C1', title: 'PULSE', trail: 'pulse', from: 6, to: -6, splits: [70, 120],
-      career: 'keti', hue: '#ff4d6d', target: {},
-    },
-  ],
+  stages: [], // no stage: the region is the point
   scatter: [],
 };

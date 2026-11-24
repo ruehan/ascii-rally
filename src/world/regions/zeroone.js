@@ -2,9 +2,8 @@
  * Career 2 — Zero One (food-waste reducers + collection service), 2025–2026.
  * A depot on the flat ground between the GP's east road and the long
  * straight: reducer machines (drums) in the yard, a control tower with
- * screens, parked collection trucks. The COLLECTION RUN stage leaves the
- * depot, loops the block past five bins (each is a split: miss one, +10 s)
- * and comes back to the yard.
+ * screens, parked collection trucks. The collection route leaves the
+ * depot, loops the block past the bins and comes back to the yard.
  */
 export const DEPOT = { pos: [468, 452], r: 14 };
 
@@ -24,12 +23,6 @@ export default {
       pos: DEPOT.pos, r: DEPOT.r, surface: 'pad',
     },
   ],
-  stages: [
-    {
-      id: 'c2', name: 'C2', title: 'COLLECTION RUN', trail: 'collect', from: 6, to: -8,
-      splits: [70, 140, 210, 280, 340], splitKind: 'pickup', // five bins
-      career: 'zeroone', hue: '#7bd389', target: {},
-    },
-  ],
+  stages: [], // no stage: the region is the point
   scatter: [],
 };

@@ -147,8 +147,7 @@ export function createUI({ bus, stages, onPanel, getCar }) {
     const car = getCar();
     if (zone.content === 'hq') {
       // In stage-number order; hidden stages only once they've been driven.
-      // Careers (C1–C3) first, then SS in number order.
-      const num = st => (st.career ? -10 : 0) + (/\d+/.exec(st.name) ? +/\d+/.exec(st.name)[0] : 99);
+      const num = st => (/\d+/.exec(st.name) ? +/\d+/.exec(st.name)[0] : 99);
       const list = stages.stages
         .filter(st => !st.hidden || leaderboard.get(st.id, car).length)
         .sort((a, b) => num(a) - num(b));
@@ -237,8 +236,7 @@ export function createUI({ bus, stages, onPanel, getCar }) {
     const target = stage.target?.[getCar()];
     lastSplit = target ? time - target * (stage.splits[index] - stage.from) / stage.length : null;
     const delta = lastSplit === null ? '' : `  ${lastSplit <= 0 ? '▼' : '▲'}${lastSplit.toFixed(1)}`;
-    if (stage.splitKind === 'pickup') note(t('note.pickup', { i: index + 1, n: stage.splits.length, time: formatTime(time), delta, missed }));
-    else note(t('note.split', { i: index + 1, time: formatTime(time), delta, missed }));
+    note(t('note.split', { i: index + 1, time: formatTime(time), delta, missed }));
   });
   bus.on('car:changed', ({ id }) => note(t('note.car', { name: CARS[id].name, klass: L(CARS[id].klass) })));
   bus.on('stage:finish', e => { lastSplit = null; note(t('note.finish', { time: formatTime(e.time) })); openResult(e); });

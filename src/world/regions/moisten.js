@@ -2,9 +2,9 @@
  * Career 3 — Moisten (cosmetics + ODF film; AI & DX), 2026–now.
  * A botanical factory on the low ground south of the vineyard road:
  * lavender rows (cosmetic ingredients), a white clean-room plant, film
- * rolls and robot arms. The FILM LINE stage leaves the yard as a smooth
- * ribbon (film unrolling) with two conveyor strips that push the car
- * along (automation), and joins the vineyard road.
+ * rolls and robot arms. The plant road leaves the yard as a smooth ribbon
+ * (film unrolling) with two conveyor strips that push the car along
+ * (automation), and joins the vineyard road.
  */
 export const YARD = { pos: [238, 72], r: 12 };
 
@@ -23,12 +23,7 @@ export default {
       pos: YARD.pos, r: YARD.r, surface: 'pad',
     },
   ],
-  stages: [
-    {
-      id: 'c3', name: 'C3', title: 'FILM LINE', trail: 'film', from: 6, to: -10, splits: [70, 140],
-      career: 'moisten', hue: '#b38cff', target: {},
-    },
-  ],
+  stages: [], // no stage: the region is the point
   // Conveyor strips (metres along a trail): the car is pushed forward.
   boosts: [
     { trail: 'film', from: 30, to: 52 },
