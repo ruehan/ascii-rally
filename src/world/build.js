@@ -689,19 +689,35 @@ export function buildWorld(scene, map) {
    * A small truck/van that drives a trail back and forth on the right-hand
    * side, pausing at `stops` (metres along the trail). Visual only (no collider).
    */
-  function patrol(route, { stops = [], cab = '#3c8c4a', box: boxColor = '#eef1f3', speed = 7 } = {}) {
-    const body = new THREE.Group();
-    const part = (w, hh, d, y, z, color) => {
-      const m = new THREE.Mesh(G.block(), material(color));
+  /**
+   * Truck/van model (cab at local −z): chassis, six wheels, cab with a dark
+   * windscreen, a box body with a coloured stripe, and a rear lift.
+   */
+  function truckModel({ cab = '#3c8c4a', box: boxColor = '#eef1f3', stripe = cab } = {}) {
+    const g = new THREE.Group();
+    const part = (geo, w, hh, d, x, y, z, color, rx = 0, rz = 0) => {
+      const m = new THREE.Mesh(geo, material(color));
       m.scale.set(w, hh, d);
-      m.position.set(0, y, z);
+      m.position.set(x, y, z);
+      m.rotation.set(rx, 0, rz);
       m.castShadow = true;
-      body.add(m);
+      g.add(m);
     };
-    part(2.4, 2.6, 4.4, 0.6, 1, boxColor);
-    part(2.3, 1.9, 1.6, 0.6, -2.6, cab);
-    part(2.5, 0.5, 6.2, 0.1, -0.2, '#2b2b2b');
-    setCharset(body, CHARSET.WALL);
+    part(G.block(), 2.3, 0.4, 6.4, 0, 0.45, -0.2, '#2b2b2b');                // chassis
+    for (const wz of [-2.4, 0.9, 2.1]) {
+      for (const wx of [-1.15, 1.15]) part(G.cylinder(), 0.5, 0.35, 0.5, wx + (wx > 0 ? -0.18 : 0.18), 0.5, wz, '#1a1a1a', 0, Math.PI / 2);
+    }
+    part(G.block(), 2.3, 1.9, 1.7, 0, 0.8, -2.55, cab);                       // cab
+    part(G.block(), 2.1, 0.7, 0.08, 0, 1.75, -3.42, '#20262e');               // windscreen
+    part(G.block(), 2.4, 2.5, 4.3, 0, 0.85, 0.95, boxColor);                  // body
+    part(G.block(), 2.44, 0.4, 4.34, 0, 1.6, 0.95, stripe);                   // stripe
+    part(G.block(), 2.2, 1.6, 0.4, 0, 1.0, 3.25, '#6b7684');                  // rear lift
+    setCharset(g, CHARSET.WALL);
+    return g;
+  }
+
+  function patrol(route, { stops = [], cab = '#3c8c4a', box: boxColor = '#eef1f3', speed = 7 } = {}) {
+    const body = truckModel({ cab, box: boxColor });
     scene.add(body);
     const end = route.length - 4;
     let s = 4, dir = 1, wait = 0;
@@ -893,53 +909,66 @@ export function buildWorld(scene, map) {
     const zd = zone('zeroone'), route = trail('collect');
     if (zd && route) {
       const screen = new THREE.MeshStandardMaterial({ color: '#0f2a1a', emissive: '#7bd389', emissiveIntensity: 0.9, flatShading: true });
-      // Wheelie bins along the collection route, on the right of the road.
+      // Bin stations along the route: three bins under a little roof.
       for (const sp of [70, 140, 210, 280, 340]) {
         const p = pointAt(route.path, route.cum, sp);
-        const off = route.width / 2 + 1.6;
-        const x = p.x - p.tz * off, z = p.z + p.tx * off, y = h(x, z);
+        const off = route.width / 2 + 2.2;
+        const x = p.x - p.tz * off, z = p.z + p.tx * off;
         const yaw = yawAlong(p.tx, p.tz);
-        put(G.block(), '#3c8c4a', CHARSET.WALL, x, y, z, 0.9, 1.1, 0.9, { yaw });
-        put(G.block(), '#245a2f', CHARSET.WALL, x, y + 1.1, z, 1.0, 0.15, 1.0, { yaw });
-        put(G.block(), '#ffd166', CHARSET.GOLD, x, y + 0.5, z - 0.46, 0.5, 0.18, 0.04, { yaw, shadow: false });
-        solid(circle(x, z, 0.6, 1.2, y));
+        if (!boxClear(x, z, 4.2, 1.8, yaw, 0.6)) continue;
+        const y = h(x, z), c = Math.cos(yaw), sn = Math.sin(yaw);
+        for (const [i, col] of [['#3c8c4a', -1.3], ['#3c8c4a', 0], ['#2f6fb5', 1.3]].map(([c0, o]) => [o, c0])) {
+          const bx = x + i * c, bz = z - i * sn;
+          put(G.block(), col, CHARSET.WALL, bx, y, bz, 1.0, 1.15, 0.95, { yaw });
+          put(G.block(), '#245a2f', CHARSET.WALL, bx, y + 1.15, bz, 1.06, 0.12, 1.0, { yaw });
+        }
+        for (const o of [-2, 2]) put(G.block(), '#6b7684', CHARSET.WALL, x + o * c + 0.7 * sn, y, z - o * sn + 0.7 * c, 0.12, 2.2, 0.12, { yaw, shadow: false });
+        put(G.block(), '#9aa3ad', CHARSET.ROOF, x, y + 2.2, z, 4.6, 0.12, 2.2, { yaw });
+        solid(box(x, z, 2.1, 0.9, yaw, 2.3, y));
       }
-      // Reducer drums (horizontal cylinders on legs) east of the yard.
+      // Reducer machines under the shed: appliance body, hopper lid on top,
+      // a green status display and an output chute.
       for (const dz of [-8, 0, 8]) {
         const x = zd.pos[0] + 19, z = zd.pos[1] + dz;
-        if (!boxClear(x, z, 5, 3, 0, 1)) continue;
+        if (!boxClear(x, z, 4.2, 3, 0, 1)) continue;
         const y = h(x, z);
-        put(G.cylinder(), '#c9ccd2', CHARSET.WALL, x - 2.2, y + 1.6, z, 1.3, 4.4, 1.3, { rz: -Math.PI / 2 });
-        put(G.block(), '#6b7684', CHARSET.WALL, x, y, z, 3.6, 0.5, 0.4);
-        put(G.block(), '#ffd166', CHARSET.GOLD, x + 2.3, y + 1.4, z, 0.3, 0.6, 0.6, { shadow: false });
-        solid(box(x, z, 2.4, 1.4, 0, 3, y));
+        put(G.block(), '#d9dee3', CHARSET.WALL, x, y, z, 3.6, 2.2, 2.6);
+        put(G.block(), '#8a9099', CHARSET.WALL, x - 0.5, y + 2.2, z, 2.2, 0.35, 2.0);          // hopper lid
+        put(G.block(), '#5f666f', CHARSET.WALL, x - 0.5, y + 2.55, z + 0.8, 1.6, 0.25, 0.15);  // lid hinge
+        _m.compose(_p.set(x - 1.82, y + 1.4, z - 0.5), _q.setFromEuler(_e.set(0, Math.PI / 2, 0)), _s.set(0.9, 0.6, 0.06));
+        inst.add(G.block(), screen, CHARSET.GOLD, _m, { castShadow: false });                     // display
+        put(G.block(), '#6b7684', CHARSET.WALL, x + 2.0, y + 0.4, z, 0.6, 0.8, 1.0);            // chute
+        put(G.block(), '#5a4030', CHARSET.DIRT, x + 2.4, y, z, 0.9, 0.5, 1.0, { shadow: false }); // output
+        solid(box(x, z, 2.1, 1.3, 0, 2.6, y));
       }
-      // Control tower with screens on every side (the system behind the service).
+      // Control tower: windows, a green band, screens on every side, antenna.
       {
         const x = zd.pos[0] - 16, z = zd.pos[1] - 20;
         if (boxClear(x, z, 7, 7, 0, 1)) {
           const { lo } = footprint(x, z, 3.5, 3.5, 0);
           put(G.block(), '#d8dde2', CHARSET.WALL, x, lo - 0.4, z, 7, 11, 7, { cut: true });
+          put(G.block(), '#3c8c4a', CHARSET.GOLD, x, lo + 9.6, z, 7.12, 0.6, 7.12, { cut: true });
           put(G.block(), '#2b2f36', CHARSET.WALL, x, lo + 10.6, z, 7.6, 0.5, 7.6, { cut: true });
+          put(G.cylinder(), '#c9ccd2', CHARSET.WALL, x + 2.5, lo + 11.1, z - 2.5, 0.1, 4, 0.1, { shadow: false });
+          windows(x, z, 0, 7, 7, lo, 2, rng(311));
           for (const [dx, dz, yaw] of [[0, -3.55, 0], [0, 3.55, Math.PI], [3.55, 0, -Math.PI / 2], [-3.55, 0, Math.PI / 2]]) {
-            _m.compose(_p.set(x + dx, lo + 7.2, z + dz), _q.setFromEuler(_e.set(0, yaw, 0)), _s.set(5, 2.4, 0.1));
+            _m.compose(_p.set(x + dx, lo + 7.2, z + dz), _q.setFromEuler(_e.set(0, yaw, 0)), _s.set(5, 2.0, 0.1));
             inst.add(G.block(), screen, CHARSET.GOLD, _m, { castShadow: false });
           }
           solid(box(x, z, 3.5, 3.5, 0, 11, lo - 0.4));
         }
       }
-      // Two collection trucks parked by the yard.
-      const truck = (x, z, yaw) => {
+      // Parked trucks (same model as the one on the route).
+      const parked = (x, z, yaw) => {
         if (!boxClear(x, z, 2.6, 7, yaw, 0.6)) return;
-        const y = h(x, z), c = Math.cos(yaw), sn = Math.sin(yaw);
-        const at = (lz) => [x + lz * sn, z + lz * c];
-        const [bx, bz] = at(1), [cx2, cz2] = at(-2.6);
-        put(G.block(), '#eef1f3', CHARSET.WALL, bx, y + 0.6, bz, 2.4, 2.6, 4.4, { yaw });
-        put(G.block(), '#3c8c4a', CHARSET.WALL, cx2, y + 0.6, cz2, 2.3, 1.9, 1.6, { yaw });
-        solid(box(x, z, 1.3, 3.5, yaw, 3.2, y));
+        const t = truckModel();
+        t.position.set(x, h(x, z), z);
+        t.rotation.y = yaw;
+        scene.add(t);
+        solid(box(x, z, 1.3, 3.5, yaw, 3.2, h(x, z)));
       };
-      truck(zd.pos[0] - 6, zd.pos[1] + 24, 0);
-      truck(zd.pos[0] + 2, zd.pos[1] + 24, 0);
+      parked(zd.pos[0] - 6, zd.pos[1] + 24, 0);
+      parked(zd.pos[0] + 2, zd.pos[1] + 24, 0);
 
       const [dx0, dz0] = zd.pos;
       // Open shed over the reducer row: four posts and a roof.
@@ -978,6 +1007,17 @@ export function buildWorld(scene, map) {
           solid(circle(bx, bz, 0.6, 1.2, by));
         }
       }
+      // Concrete yard slab (skips roads), floodlights at the corners, and a
+      // warehouse with a green band on the west side.
+      for (let x = dx0 - 22; x <= dx0 + 24; x += 4) {
+        for (let z = dz0 - 24; z <= dz0 + 30; z += 4) {
+          if (surfaces.insideAt(x, z) > -0.4) continue; // up to the road edge
+          paving(x, z, 4.02, 4.02, 0, '#bcb7ab');
+        }
+      }
+      for (const [fx, fz] of [[dx0 - 23, dz0 - 25], [dx0 + 25, dz0 - 25], [dx0 - 23, dz0 + 31], [dx0 + 25, dz0 + 31]]) lampPost(fx, fz, { height: 8 });
+      modernBlock(dx0 - 17, dz0 + 6, 9, 15, 6, { yaw: Math.PI / 2, wall: '#d8dde2', band: '#3c8c4a', rand: rng(312), canopy: false });
+
       // Yard fence: posts and rails round the depot; gaps appear wherever a
       // road or a building is in the way.
       {
