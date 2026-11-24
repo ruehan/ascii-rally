@@ -10,12 +10,13 @@ import highway, { loop24 } from './regions/highway.js';
 import snow from './regions/snow.js';
 import desert from './regions/desert.js';
 import keti from './regions/keti.js';
+import zeroone from './regions/zeroone.js';
 
 /**
  * Regions are concatenated in order. Terrain features apply in type order
  * (see terrain.js), so region order only matters within a type.
  */
-const regions = [world, core, gp, highway, snow, desert, keti];
+const regions = [world, core, gp, highway, snow, desert, keti, zeroone];
 const all = key => regions.flatMap(r => r[key] ?? []);
 
 export default {

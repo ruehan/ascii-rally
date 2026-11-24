@@ -699,6 +699,64 @@ export function buildWorld(scene, map) {
     }
   }
 
+  // --- Career 2: Zero One depot ------------------------------------------------------
+  // Food-waste reducers (drums) in the yard, a control tower with screens,
+  // parked collection trucks, and a wheelie bin at each pickup split.
+  {
+    const zd = zone('zeroone'), route = trail('collect');
+    const run = map.stages.find(st => st.id === 'c2');
+    if (zd && route && run) {
+      const screen = new THREE.MeshStandardMaterial({ color: '#0f2a1a', emissive: '#7bd389', emissiveIntensity: 0.9, flatShading: true });
+      // Bins at the pickups, on the right of the road.
+      for (const sp of run.splits) {
+        const p = pointAt(route.path, route.cum, sp);
+        const off = route.width / 2 + 1.6;
+        const x = p.x - p.tz * off, z = p.z + p.tx * off, y = h(x, z);
+        const yaw = yawAlong(p.tx, p.tz);
+        put(G.block(), '#3c8c4a', CHARSET.WALL, x, y, z, 0.9, 1.1, 0.9, { yaw });
+        put(G.block(), '#245a2f', CHARSET.WALL, x, y + 1.1, z, 1.0, 0.15, 1.0, { yaw });
+        put(G.block(), '#ffd166', CHARSET.GOLD, x, y + 0.5, z - 0.46, 0.5, 0.18, 0.04, { yaw, shadow: false });
+        solid(circle(x, z, 0.6, 1.2, y));
+      }
+      // Reducer drums (horizontal cylinders on legs) east of the yard.
+      for (const dz of [-8, 0, 8]) {
+        const x = zd.pos[0] + 19, z = zd.pos[1] + dz;
+        if (!boxClear(x, z, 5, 3, 0, 1)) continue;
+        const y = h(x, z);
+        put(G.cylinder(), '#c9ccd2', CHARSET.WALL, x - 2.2, y + 1.6, z, 1.3, 4.4, 1.3, { rz: -Math.PI / 2 });
+        put(G.block(), '#6b7684', CHARSET.WALL, x, y, z, 3.6, 0.5, 0.4);
+        put(G.block(), '#ffd166', CHARSET.GOLD, x + 2.3, y + 1.4, z, 0.3, 0.6, 0.6, { shadow: false });
+        solid(box(x, z, 2.4, 1.4, 0, 3, y));
+      }
+      // Control tower with screens on every side (the system behind the service).
+      {
+        const x = zd.pos[0] - 16, z = zd.pos[1] - 20;
+        if (boxClear(x, z, 7, 7, 0, 1)) {
+          const { lo } = footprint(x, z, 3.5, 3.5, 0);
+          put(G.block(), '#d8dde2', CHARSET.WALL, x, lo - 0.4, z, 7, 11, 7, { cut: true });
+          put(G.block(), '#2b2f36', CHARSET.WALL, x, lo + 10.6, z, 7.6, 0.5, 7.6, { cut: true });
+          for (const [dx, dz, yaw] of [[0, -3.55, 0], [0, 3.55, Math.PI], [3.55, 0, -Math.PI / 2], [-3.55, 0, Math.PI / 2]]) {
+            _m.compose(_p.set(x + dx, lo + 7.2, z + dz), _q.setFromEuler(_e.set(0, yaw, 0)), _s.set(5, 2.4, 0.1));
+            inst.add(G.block(), screen, CHARSET.GOLD, _m, { castShadow: false });
+          }
+          solid(box(x, z, 3.5, 3.5, 0, 11, lo - 0.4));
+        }
+      }
+      // Two collection trucks parked by the yard.
+      const truck = (x, z, yaw) => {
+        if (!boxClear(x, z, 2.6, 7, yaw, 0.6)) return;
+        const y = h(x, z), c = Math.cos(yaw), sn = Math.sin(yaw);
+        const at = (lz) => [x + lz * sn, z + lz * c];
+        const [bx, bz] = at(1), [cx2, cz2] = at(-2.6);
+        put(G.block(), '#eef1f3', CHARSET.WALL, bx, y + 0.6, bz, 2.4, 2.6, 4.4, { yaw });
+        put(G.block(), '#3c8c4a', CHARSET.WALL, cx2, y + 0.6, cz2, 2.3, 1.9, 1.6, { yaw });
+        solid(box(x, z, 1.3, 3.5, yaw, 3.2, y));
+      };
+      truck(zd.pos[0] - 6, zd.pos[1] + 24, 0);
+      truck(zd.pos[0] + 2, zd.pos[1] + 24, 0);
+    }
+  }
+
   // --- Scatter (trees, rocks) -----------------------------------------------------
   const KINDS = {
     conifer(x, z, rand) {

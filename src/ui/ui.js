@@ -236,7 +236,8 @@ export function createUI({ bus, stages, onPanel, getCar }) {
     const target = stage.target?.[getCar()];
     lastSplit = target ? time - target * (stage.splits[index] - stage.from) / stage.length : null;
     const delta = lastSplit === null ? '' : `  ${lastSplit <= 0 ? '▼' : '▲'}${lastSplit.toFixed(1)}`;
-    note(t('note.split', { i: index + 1, time: formatTime(time), delta, missed }));
+    if (stage.splitKind === 'pickup') note(t('note.pickup', { i: index + 1, n: stage.splits.length, time: formatTime(time), delta, missed }));
+    else note(t('note.split', { i: index + 1, time: formatTime(time), delta, missed }));
   });
   bus.on('car:changed', ({ id }) => note(t('note.car', { name: CARS[id].name, klass: L(CARS[id].klass) })));
   bus.on('stage:finish', e => { lastSplit = null; note(t('note.finish', { time: formatTime(e.time) })); openResult(e); });
