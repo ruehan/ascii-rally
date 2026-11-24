@@ -1310,6 +1310,25 @@ export function buildWorld(scene, map) {
     }
   }
 
+  // --- Road paint ----------------------------------------------------------------
+  // Dashed centre line on public tarmac roads (not the circuit, which has
+  // kerbs, nor the heartbeat road with its own trace).
+  {
+    const DASH = 3, GAP = 5;
+    for (const t of terrain.trails) {
+      if (t.surface !== 'asphalt' || t.kerbs || t.id === 'pulse' || t.id === 'pitlane' || (t.width ?? 6) < 6.5) continue;
+      for (let d = GAP; d < t.length - GAP; d += DASH + GAP) {
+        const p = pointAt(t.path, t.cum, d + DASH / 2);
+        // Only on this road's own tarmac: not across pads or through junctions.
+        if (surfaces.surfaceAt(p.x, p.z) !== 'asphalt' || surfaces.insideAt(p.x, p.z) < (t.width ?? 6) / 2 - 0.6) continue;
+        const y0 = h(p.x - p.tx * DASH / 2, p.z - p.tz * DASH / 2), y1 = h(p.x + p.tx * DASH / 2, p.z + p.tz * DASH / 2);
+        _e.set(Math.atan2(y0 - y1, DASH), Math.atan2(p.tx, p.tz), 0);
+        _m.compose(_p.set(p.x, (y0 + y1) / 2 + 0.02, p.z), _q.setFromEuler(_e), _s.set(0.34, 0.05, DASH));
+        inst.add(G.block(), material('#ffd766'), CHARSET.GOLD, _m, { castShadow: false }); // warm paint: hue is what reads in glyphs
+      }
+    }
+  }
+
   inst.build(scene);
 
   // Bake the light pools: smooth falloff, brightest wins where pools overlap.

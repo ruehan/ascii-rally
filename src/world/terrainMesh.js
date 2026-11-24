@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { SURFACE_IDS } from './surfaces.js';
+import { SURFACE_EDGE_GLSL } from '../render/surfaceEdge.js';
 import { createTerrainInfoMaterial } from '../render/terrainInfo.js';
 import { groundLight, GROUND_LIGHT_GLSL } from '../render/groundLight.js';
 
@@ -118,7 +119,7 @@ export function createTerrainMesh(terrain, surfaces, biomes = null, { waterLevel
     }
   }
 
-  const idTex = dataTexture(surfaces.ids, surfaces.n, THREE.NearestFilter);
+  const idTex = dataTexture(surfaces.near, surfaces.n, THREE.NearestFilter);
   const sdfTex = dataTexture(surfaces.sdf, surfaces.n, THREE.LinearFilter);
 
   // Colour pass: vertex colours, roads painted from the surface map.
@@ -126,6 +127,7 @@ export function createTerrainMesh(terrain, surfaces, biomes = null, { waterLevel
   const surfaceColors = SURFACE_COLORS.map(h => new THREE.Color(h));
   mat.onBeforeCompile = shader => {
     shader.uniforms.tSurfId = { value: idTex };
+    shader.uniforms.tSurfSdf = { value: sdfTex };
     shader.uniforms.uWorldMin = { value: surfaces.origin };
     shader.uniforms.uWorldSize = { value: surfaces.size };
     shader.uniforms.uSurfColor = { value: surfaceColors };
@@ -153,26 +155,51 @@ export function createTerrainMesh(terrain, surfaces, biomes = null, { waterLevel
         uniform float uWater;
         ${GROUND_LIGHT_GLSL}
         uniform sampler2D tSurfId;
+        uniform sampler2D tSurfSdf;
+        ${SURFACE_EDGE_GLSL}
         uniform float uWorldMin;
         uniform float uWorldSize;
         uniform vec3 uSurfColor[16];`)
       .replace('#include <color_fragment>', `#include <color_fragment>
-        float sid = floor(texture2D(tSurfId, (vWorldXZ - uWorldMin) / uWorldSize).r * 255.0 + 0.5);
-        if (sid > 0.5) diffuseColor.rgb = uSurfColor[int(clamp(sid, 0.0, 15.0))];
-        else if (vWorldY > uWater + 0.6) {
+        vec2 suv = (vWorldXZ - uWorldMin) / uWorldSize;
+        float sid = floor(texture2D(tSurfId, suv).r * 255.0 + 0.5);
+        // Metres inside the nearest road/pad: a smooth edge (crisp for paved
+        // surfaces, ragged for loose ones) instead of the id map's 0.5 m steps.
+        float sd = surfInside(sid, surfSd(tSurfSdf, suv), vWorldXZ);
+        float wild = clamp(1.0 - vBiome.x - vBiome.y, 0.0, 1.0);
+        if (vWorldY > uWater + 0.6) {
           // Open ground isn't one flat colour: lusher and drier patches
           // (meadow vs. dry grass) drift across it — a change of hue more
           // than of brightness, so the glyph texture stays calm. Snow and
           // sand only get faint wind-drift shading.
           float v = gNoise(vWorldXZ * 0.03) * 0.6 + gNoise(vWorldXZ * 0.085 + 31.0) * 0.4;
-          float wild = clamp(1.0 - vBiome.x - vBiome.y, 0.0, 1.0);
           vec3 lush = diffuseColor.rgb * vec3(0.80, 1.07, 0.74);
           vec3 dry = diffuseColor.rgb * vec3(1.13, 1.00, 0.80);
           diffuseColor.rgb = mix(diffuseColor.rgb, mix(lush, dry, smoothstep(0.32, 0.68, v)), wild);
           diffuseColor.rgb *= 1.0 + (v - 0.5) * 0.14 * (1.0 - wild);
         }
-        // Kerbs: red/white blocks along the road.
-        if (abs(sid - ${SURFACE_IDS.kerb}.0) < 0.5 && fract((vWorldXZ.x + vWorldXZ.y) * 0.5) < 0.5) diffuseColor.rgb = vec3(0.95);
+        // Cliffs and cuttings show their layers: faint strata that follow
+        // height, bent a little so they don't read as ruled lines.
+        {
+          float steepF = 1.0 - smoothstep(0.55, 0.82, normalize(vWorldN).y);
+          float strata = sin(vWorldY * 2.4 + gNoise(vWorldXZ * 0.07) * 5.0);
+          diffuseColor.rgb *= 1.0 + 0.13 * strata * steepF;
+        }
+        if (sid > 0.5) {
+          vec3 rc = uSurfColor[int(clamp(sid, 0.0, 15.0))];
+          bool paved = sid == ${SURFACE_IDS.asphalt}.0 || sid == ${SURFACE_IDS.kerb}.0;
+          if (sd > 0.0) {
+            // Kerbs: red/white blocks along the road.
+            if (sid == ${SURFACE_IDS.kerb}.0 && fract((vWorldXZ.x + vWorldXZ.y) * 0.5) < 0.5) rc = vec3(0.95);
+            // Loose roads fade into the verge instead of ending on a line.
+            if (surfLoose(sid)) rc = mix(diffuseColor.rgb, rc, 0.68 + 0.32 * smoothstep(0.0, 0.8, sd));
+            diffuseColor.rgb = rc;
+          } else if (paved) {
+            // A worn gravel shoulder beside tarmac (fainter on snow and sand).
+            float sh = smoothstep(-1.0, -0.15, sd) * (0.25 + 0.4 * wild);
+            diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.62, 0.57, 0.47), sh);
+          }
+        }
         // Hillshade: relief lit from the north-west whatever the sun does, so
         // slopes read from the top-down camera (flat ground stays at 1).
         {

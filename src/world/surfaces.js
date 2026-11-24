@@ -36,6 +36,9 @@ export function createSurfaces({ size = 400, res = 0.5, trails = [], pads = [], 
   const n = Math.round(size / res);
   const origin = -size / 2;
   const ids = new Uint8Array(n * n);
+  // Id of the NEAREST surface, also for texels just outside it: the shaders
+  // cut the edge from the smooth distance field, not from these 0.5 m texels.
+  const near = new Uint8Array(n * n);
   const sdf = new Uint8Array(n * n);   // 0 = far outside
   // Best (halfWidth - dist) per cell, in centimetres (Int16: half the memory of floats).
   const Q = 100;
@@ -46,6 +49,7 @@ export function createSurfaces({ size = 400, res = 0.5, trails = [], pads = [], 
     const q = Math.round(value * Q);
     if (q > inside[k]) {
       inside[k] = q;
+      near[k] = id;
       if (value >= 0) ids[k] = id;
     }
   };
@@ -81,7 +85,19 @@ export function createSurfaces({ size = 400, res = 0.5, trails = [], pads = [], 
   // Kerb only where the texel really ends up within 1.2 m of the road edge
   // (inside corners, a segment's edge strip can lie mid-road for its neighbour).
   for (const k of kerbCandidates) {
-    if (inside[k] >= 0 && inside[k] < 1.2 * Q && ids[k] === SURFACE_IDS.asphalt) ids[k] = SURFACE_IDS.kerb;
+    if (inside[k] >= 0 && inside[k] < 1.2 * Q && ids[k] === SURFACE_IDS.asphalt) {
+      ids[k] = near[k] = SURFACE_IDS.kerb;
+      // ...and the texels just outside it, so the kerb reaches the smooth edge.
+      const ix = k % n, iz = (k / n) | 0;
+      for (let dz = -1; dz <= 1; dz++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const x = ix + dx, z = iz + dz;
+          if (x < 0 || z < 0 || x >= n || z >= n) continue;
+          const j = z * n + x;
+          if (inside[j] < 0 && near[j] === SURFACE_IDS.asphalt) near[j] = SURFACE_IDS.kerb;
+        }
+      }
+    }
   }
 
   for (const p of [...pads, ...patches]) {
@@ -98,7 +114,7 @@ export function createSurfaces({ size = 400, res = 0.5, trails = [], pads = [], 
         // Pads win over roads they overlap so the floor reads as one plaza.
         const k = iz * n + ix;
         const v = p.r - d;
-        if (v >= 0) { ids[k] = id; inside[k] = Math.max(inside[k], Math.round(v * Q)); }
+        if (v >= 0) { ids[k] = near[k] = id; inside[k] = Math.max(inside[k], Math.round(v * Q)); }
         else stamp(k, v, id);
       }
     }
@@ -116,7 +132,7 @@ export function createSurfaces({ size = 400, res = 0.5, trails = [], pads = [], 
   };
 
   return {
-    size, res, n, origin, ids, sdf,
+    size, res, n, origin, ids, near, sdf,
     /** Surface name at a point. */
     surfaceAt: (x, z) => SURFACE_NAMES[ids[index(x, z)]],
     /** Metres inside the nearest road/pad (negative = outside, clamped ±SDF_RANGE). */

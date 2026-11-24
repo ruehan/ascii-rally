@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { CHARSET } from './charsets.js';
-import { SURFACE_IDS, SDF_RANGE } from '../world/surfaces.js';
+import { SURFACE_IDS } from '../world/surfaces.js';
+import { SURFACE_EDGE_GLSL } from './surfaceEdge.js';
 
 // Charset per surface id (index = SURFACE_IDS value). Grass uses height bands.
 const SURFACE_SET = [];
@@ -38,8 +39,10 @@ export function createTerrainInfoMaterial({ surfaceIdTex, surfaceSdfTex, size, b
       varying vec3 vWorld;
       varying vec3 vViewNormal;
       varying vec2 vBiome;
+      varying float vUp;
       void main() {
         vBiome = biome;
+        vUp = normal.y; // smooth world-space slope (the terrain isn't rotated)
         vec4 wp = modelMatrix * vec4(position, 1.0);
         vWorld = wp.xyz;
         vViewNormal = normalize(normalMatrix * normal);
@@ -58,12 +61,17 @@ export function createTerrainInfoMaterial({ surfaceIdTex, surfaceSdfTex, size, b
       varying vec3 vWorld;
       varying vec3 vViewNormal;
       varying vec2 vBiome;
+      varying float vUp;
       float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+      ${SURFACE_EDGE_GLSL}
 
       void main() {
         vec2 uv = (vWorld.xz - uWorldMin) / uWorldSize;
         float sid = floor(texture2D(tSurfId, uv).r * 255.0 + 0.5);
-        float sdW = (texture2D(tSurfSdf, uv).r * 2.0 - 1.0) * ${SDF_RANGE.toFixed(1)}; // m, >0 inside road
+        // Metres inside the nearest road/pad — the same edge as the colour
+        // pass (smooth; ragged on loose surfaces).
+        float sdRaw = surfSd(tSurfSdf, uv);
+        float sdW = surfInside(sid, sdRaw, vWorld.xz);
 
         // Derivatives up front (must not sit in divergent branches).
         float hb = vWorld.y / uContour;
@@ -72,17 +80,24 @@ export function createTerrainInfoMaterial({ surfaceIdTex, surfaceSdfTex, size, b
         float fh = length(gH);
         float fs = length(gS);
 
-        // World-space slope for cliffs.
-        vec3 wn = normalize(cross(dFdx(vWorld), dFdy(vWorld)));
         float set = vWorld.y < uBands.x ? ${CHARSET.TERRA_LOW}.0
                   : vWorld.y < uBands.y ? ${CHARSET.TERRA_MID}.0 : ${CHARSET.TERRA_HIGH}.0;
         // Biomes (dithered at their borders): snow / desert glyphs off-road.
         float r = hash(floor(vWorld.xz * 2.0));
         if (vBiome.x > r) set = vWorld.y > 60.0 ? ${CHARSET.SNOW_HIGH}.0 : ${CHARSET.SNOW}.0;
         else if (vBiome.y > r) set = vWorld.y > 6.5 ? ${CHARSET.DUNE}.0 : ${CHARSET.SAND}.0;
-        if (abs(wn.y) < 0.6) set = ${CHARSET.CLIFF}.0;
+        // Cliff glyphs for real rock faces only: a road's own cuttings and
+        // embankments stay calm ground (they'd read as scrappy hatched strips).
+        // (The smooth slope, not the facet's: no triangle-shaped scraps.)
+        if (vUp < 0.5) {
+          // The distance field only reaches 4 m, so probe 4 m further out each way.
+          float o = 4.0 / uWorldSize;
+          float road = max(max(sdRaw, surfSd(tSurfSdf, uv + vec2(o, 0.0))), max(surfSd(tSurfSdf, uv - vec2(o, 0.0)),
+                       max(surfSd(tSurfSdf, uv + vec2(0.0, o)), surfSd(tSurfSdf, uv - vec2(0.0, o)))));
+          if (road < -3.6) set = ${CHARSET.CLIFF}.0;
+        }
         float surfSet = uSurfSet[int(clamp(sid, 0.0, 15.0))];
-        bool onSurf = surfSet >= 0.0;
+        bool onSurf = surfSet >= 0.0 && sdW > 0.0;
         if (onSurf) set = surfSet;
 
         float a = 64.0 + set;
@@ -94,7 +109,8 @@ export function createTerrainInfoMaterial({ surfaceIdTex, surfaceSdfTex, size, b
         vec2 g = vec2(0.0);
         bool isLine = false;
         float kind = 0.0; // 0 contour, 4 road edge
-        if (fs > 1e-4 && dEdge < 1.6) { g = gS; isLine = true; kind = 4.0; }
+        // (paved surfaces only: a loose road's ragged edge stays soft, without an outline)
+        if (!surfLoose(sid) && fs > 1e-4 && dEdge < 1.6) { g = gS; isLine = true; kind = 4.0; }
         else if (!onSurf && fh < 0.35 && dLine < 1.1) { g = gH; isLine = true; }
         if (isLine) {
           float th = atan(g.y, g.x);
