@@ -184,6 +184,58 @@ export function buildWorld(scene, map) {
     }
   }
 
+  // --- Shared architecture helpers (career places) -----------------------------------
+  // Night lights: lamp heads glow with the time of day (see update()).
+  const lampGlow = new THREE.MeshStandardMaterial({ color: '#3a3428', emissive: '#ffd89a', emissiveIntensity: 0, flatShading: true });
+  /** Street lamp: pole + glowing head (lit at dusk/night). */
+  function lampPost(x, z, { height = 4.5 } = {}) {
+    if (!isClear(x, z, 0.3, 0.6)) return false;
+    const y = h(x, z);
+    put(G.block(), '#3b4048', CHARSET.WALL, x, y, z, 0.16, height, 0.16, { shadow: false });
+    _m.compose(_p.set(x, y + height, z), _q.identity(), _s.set(0.55, 0.22, 0.55));
+    inst.add(G.block(), lampGlow, CHARSET.GOLD, _m, { castShadow: false });
+    solid(circle(x, z, 0.2, height, y));
+    return true;
+  }
+  /** Flat paving (drive-over) where the ground is level enough; returns false otherwise. */
+  function paving(x, z, w, d, yaw, color, charset = CHARSET.FLOOR) {
+    const { lo, hi } = footprint(x, z, w / 2, d / 2, yaw);
+    if (hi - lo > 0.6) return false;
+    put(G.block(), color, charset, x, hi - 0.06, z, w, 0.1, d, { yaw, shadow: false });
+    return true;
+  }
+  /**
+   * Modern building: main volume, vertical mullion stripes on the long faces
+   * (curtain wall), a coloured band under the roof, roof parapet and HVAC
+   * boxes, an entrance canopy on the front (local −z) face, lit windows.
+   */
+  function modernBlock(x, z, w, d, hgt, { yaw = 0, wall = '#8fb8d0', band = '#2f6fb5', rand = rng(1), canopy = true } = {}) {
+    if (!boxClear(x, z, w, d, yaw, 0.8)) return null;
+    const { lo } = footprint(x, z, w / 2, d / 2, yaw);
+    const c = Math.cos(yaw), sn = Math.sin(yaw);
+    const at = (lx, lz) => [x + lx * c + lz * sn, z - lx * sn + lz * c];
+    put(G.block(), wall, CHARSET.WALL, x, lo - 0.4, z, w, hgt + 0.4, d, { yaw, cut: true });
+    put(G.block(), band, CHARSET.GOLD, x, lo + hgt - 0.9, z, w + 0.12, 0.7, d + 0.12, { yaw, cut: true });
+    put(G.block(), '#e9edf0', CHARSET.WALL, x, lo + hgt, z, w + 0.3, 0.45, d + 0.3, { yaw, cut: true });
+    for (let mx = -w / 2 + 1.5; mx < w / 2 - 1; mx += 2.2) {
+      for (const side of [-1, 1]) {
+        const [px, pz] = at(mx, side * (d / 2 + 0.05));
+        put(G.block(), '#dde6ec', CHARSET.WALL, px, lo + 0.4, pz, 0.18, hgt - 1.6, 0.1, { yaw, shadow: false });
+      }
+    }
+    for (let i = 0; i < 2 + Math.floor(rand() * 2); i++) {
+      const [px, pz] = at((rand() - 0.5) * (w - 4), (rand() - 0.5) * (d - 3));
+      put(G.block(), '#aab3bd', CHARSET.WALL, px, lo + hgt + 0.45, pz, 1.8, 1.0, 1.4, { yaw, shadow: false });
+    }
+    if (canopy) {
+      const [px, pz] = at(0, -d / 2 - 1.2);
+      put(G.block(), '#e9edf0', CHARSET.WALL, px, lo + 2.8, pz, 4.2, 0.25, 2.4, { yaw, shadow: false });
+    }
+    windows(x, z, yaw, w, d, lo, Math.max(1, Math.floor(hgt / 3) - 1), rand);
+    solid(box(x, z, w / 2, d / 2, yaw, hgt + 0.45, lo - 0.4));
+    return { lo, at };
+  }
+
   function house(x, z, yaw, w, d, floors, rand, { flatRoof = false } = {}) {
     const { lo, hi } = footprint(x, z, w / 2, d / 2, yaw);
     const base = lo - 0.4;
@@ -679,15 +731,42 @@ export function buildWorld(scene, map) {
     if (zk) {
       const [cx, cz] = zk.pos;
       const y = h(cx, cz);
-      // Hour markers painted on the plaza (flat, drive-over).
+      // Hour markers painted on the plaza (flat, drive-over); lume glows at night.
+      const lume = new THREE.MeshStandardMaterial({ color: '#f2f2f2', emissive: '#9dffb0', emissiveIntensity: 0, flatShading: true });
+      const lumeGold = new THREE.MeshStandardMaterial({ color: '#ffd166', emissive: '#ffe39a', emissiveIntensity: 0, flatShading: true });
+      animators.push((dt, t, look) => { lume.emissiveIntensity = lumeGold.emissiveIntensity = look ? look.lights * 1.4 : 0; });
+      const flat = (mat, x, z, w, d, yaw, lift = 0.05) => {
+        _m.compose(_p.set(x, h(x, z) + lift, z), _q.setFromEuler(_e.set(0, yaw, 0)), _s.set(w, 0.18, d));
+        inst.add(G.block(), mat, CHARSET.GOLD, _m, { castShadow: false });
+      };
       for (let i = 0; i < 12; i++) {
         const a = (i / 12) * Math.PI * 2;
         const big = i % 3 === 0;
         const r = zk.r - 4;
-        const mx = cx + Math.sin(a) * r, mz = cz - Math.cos(a) * r;
-        put(G.block(), big ? '#ffd166' : '#f2f2f2', CHARSET.GOLD, mx, h(mx, mz) + 0.05, mz,
-          big ? 1.6 : 0.9, 0.18, big ? 4 : 2.4, { yaw: -a, shadow: false });
+        flat(big ? lumeGold : lume, cx + Math.sin(a) * r, cz - Math.cos(a) * r, big ? 1.6 : 0.9, big ? 4 : 2.4, -a);
       }
+      // Sub-dials (chronograph): small tick rings at 6 and 9 o'clock; the one
+      // at 9 has a running seconds hand. Date window at 3 o'clock.
+      const subSecond = [];
+      for (const [ox, oz, running] of [[0, 11.5, false], [-11.5, 0, true]]) {
+        const sx = cx + ox, sz = cz + oz;
+        for (let k = 0; k < 16; k++) {
+          const a = (k / 16) * Math.PI * 2;
+          flat(lume, sx + Math.sin(a) * 3.2, sz - Math.cos(a) * 3.2, 0.22, k % 4 ? 0.5 : 1.0, -a, 0.08);
+        }
+        put(G.cylinder(), '#3a414b', CHARSET.GLYPH, sx, h(sx, sz), sz, 4.4, 0.04, 4.4, { shadow: false });
+        put(G.cylinder(), '#c9ccd2', CHARSET.GOLD, sx, h(sx, sz), sz, 4.6, 0.035, 4.6, { shadow: false }); // silver ring
+        if (running) {
+          const m = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.12, 3.0).translate(0, 0.06, -1.5), material('#ff4d6d'));
+          m.position.set(sx, h(sx, sz) + 0.2, sz);
+          setCharset(m, CHARSET.GOLD);
+          scene.add(m);
+          subSecond.push(m);
+        }
+      }
+      animators.push((dt, t) => { for (const m of subSecond) m.rotation.y = -((Math.floor(t) % 60) / 60) * Math.PI * 2; });
+      flat(material('#f2f2f2'), cx + 13, cz, 3.2, 2.2, 0, 0.07);
+      flat(material('#1d2127'), cx + 13, cz, 1.6, 1.2, 0, 0.1);
       // Hands: real meshes, turned every frame in update().
       const hand = (len, wid, color) => {
         const m = new THREE.Mesh(new THREE.BoxGeometry(wid, 0.2, len).translate(0, 0.1, -len / 2), material(color));
@@ -720,29 +799,32 @@ export function buildWorld(scene, map) {
         solid(circle(kx, kz, rad, rad * 2, h(kx, kz)));
       }
 
-      // Glass lab blocks (north), skipped if a road is in the way.
-      const lab = (x, z, w, d, hgt) => {
-        if (!boxClear(x, z, w, d, 0, 0.8)) return false;
-        const { lo } = footprint(x, z, w / 2, d / 2, 0);
-        put(G.block(), '#8fb8d0', CHARSET.WALL, x, lo - 0.4, z, w, hgt + 0.4, d, { cut: true });
-        put(G.block(), '#eef3f6', CHARSET.WALL, x, lo + hgt, z, w + 0.4, 0.4, d + 0.4, { cut: true });
-        windows(x, z, 0, w, d, lo, Math.floor(hgt / 3), rng(Math.round(x * 13 + z)));
-        solid(box(x, z, w / 2, d / 2, 0, hgt + 0.4, lo - 0.4));
-        return true;
-      };
-      lab(90, -104, 16, 9, 9);
-      if (lab(123, -105, 18, 10, 12)) {
-        // Antenna mast on the main lab.
-        const ry = h(123, -105) + 12.4;
-        put(G.cylinder(), '#c9ccd2', CHARSET.WALL, 129, ry, -107, 0.15, 9, 0.15, { shadow: false });
+      // Labs: curtain-wall blocks facing the plaza (fronts to the south), each
+      // with its own colour band; the east one carries a sensor-test dome.
+      modernBlock(90, -104, 16, 9, 9, { yaw: Math.PI, band: '#ff4d6d', rand: rng(901) });
+      const main = modernBlock(123, -106, 18, 10, 12, { yaw: Math.PI, band: '#2f6fb5', rand: rng(902) });
+      if (main) {
+        // Antenna mast on the main lab, light blinking.
+        const ry = main.lo + 12.45;
+        put(G.cylinder(), '#c9ccd2', CHARSET.WALL, 129, ry, -108, 0.15, 9, 0.15, { shadow: false });
         const lamp = new THREE.Mesh(G.ball(), new THREE.MeshStandardMaterial({ color: '#40121a', emissive: '#ff4d6d', emissiveIntensity: 0 }));
-        lamp.position.set(129, ry + 9.2, -107);
+        lamp.position.set(129, ry + 9.2, -108);
         lamp.scale.setScalar(0.4);
         setCharset(lamp, CHARSET.GOLD);
         scene.add(lamp);
         animators.push((dt, t) => { lamp.material.emissiveIntensity = (t % 1.4) < 0.25 ? 2.2 : 0.1; }); // aircraft-warning blink
       }
-      lab(152, -103, 13, 8, 8);
+      const test = modernBlock(153, -104, 13, 9, 7, { yaw: Math.PI, wall: '#e9edf0', band: '#5dff8a', rand: rng(903) });
+      if (test) put(G.ball(), '#cfe8f0', CHARSET.ROOF, 153, test.lo + 7.4, -104, 3.4, 2.6, 3.4, { cut: true });
+
+      // Campus walk along the lab fronts: paving, lamps and benches.
+      for (let x = 78; x <= 164; x += 4) paving(x, -97.6, 4.1, 2.8, 0, '#cfc8b8');
+      for (let x = 82; x <= 164; x += 14) lampPost(x, -95.9);
+      for (let x = 89; x <= 160; x += 14) {
+        if (!isClear(x, -95.9, 0.8, 0.6)) continue;
+        put(G.block(), '#8a6a4a', CHARSET.WOOD, x, h(x, -95.9), -95.9, 1.8, 0.45, 0.55);
+        solid(box(x, -95.9, 0.9, 0.3, 0, 0.5, h(x, -95.9)));
+      }
 
       // Campus walk: a row of round trees between the labs and the road.
       const roundTree = (x, z, rand) => {
@@ -753,7 +835,7 @@ export function buildWorld(scene, map) {
         solid(circle(x, z, 0.4, 3.5, y));
       };
       const trand = rng(4242);
-      for (let x = 78; x <= 166; x += 7) roundTree(x, -95 + (trand() - 0.5) * 1.5, trand);
+      for (let x = 78; x <= 166; x += 7) roundTree(x, -93.2 + (trand() - 0.5) * 0.8, trand);
 
       // Staff car park: painted bays and a few parked cars, wherever it fits.
       for (const [px, pz] of [[18, -104], [150, -54], [84, -52]]) {
@@ -784,6 +866,15 @@ export function buildWorld(scene, map) {
         solid(circle(bx + dx, bz, 0.4, 5.5, by));
       }
       put(G.block(), '#14181c', CHARSET.GLYPH, bx, by + 2.2, bz, 13.6, 3.4, 0.3);
+      // The heartbeat road's centre line is the same pulsing trace.
+      const pulse = trail('pulse');
+      if (pulse) {
+        for (let d = 2; d < pulse.length - 2; d += 2) {
+          const p = pointAt(pulse.path, pulse.cum, d);
+          _m.compose(_p.set(p.x, pulse.profileAt(d) + 0.05, p.z), _q.setFromEuler(_e.set(0, Math.atan2(p.tx, p.tz), 0)), _s.set(0.3, 0.06, 1.5));
+          inst.add(G.block(), beat, CHARSET.GOLD, _m, { castShadow: false });
+        }
+      }
       const wave = [[-6, 0], [-3.4, 0], [-3, 0.3], [-2.6, 0], [-1.6, 0], [-1.2, -0.4], [-0.6, 1.4], [0, -0.8], [0.4, 0], [1.8, 0], [2.4, 0.4], [3, 0], [6, 0]];
       for (let i = 0; i < wave.length - 1; i++) {
         const [x0, y0] = wave[i], [x1, y1] = wave[i + 1];
@@ -1128,6 +1219,7 @@ export function buildWorld(scene, map) {
       if (look) {
         seaMat.emissive.copy(look.sky).multiplyScalar(look.night ? 0.24 : 0.12);
         windowLit.emissiveIntensity = look.lights * 1.8; // dusk → night
+        lampGlow.emissiveIntensity = 0.15 + look.lights * 2.2;
         for (const fn of animators) fn(dt, t, look);
         // KETI dial: hands show the in-game time (12 at north, clockwise).
         if (dialHands.length) {
