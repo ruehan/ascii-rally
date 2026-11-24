@@ -32,6 +32,10 @@ export default {
   // Lavender rows west of the yard.
   vineyards: [
     { rect: [198, 44, 228, 106], yaw: 0, spacing: 2.6, colors: ['#8e6bbf', '#a585d6'], height: 0.7 },
+    // Flower fields south of the plant road: rose, calendula, more lavender.
+    { rect: [296, 100, 334, 150], yaw: 0, spacing: 2.6, colors: ['#e07a9a', '#ef9ab3'], height: 0.6 },
+    { rect: [338, 100, 376, 150], yaw: 0, spacing: 2.6, colors: ['#f2b134', '#f5c55a'], height: 0.6 },
+    { rect: [296, 154, 376, 188], yaw: 0.15, spacing: 2.6, colors: ['#8e6bbf', '#a585d6'], height: 0.7 },
   ],
   scatter: [],
 };

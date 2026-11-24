@@ -633,6 +633,43 @@ export function buildWorld(scene, map) {
   // Per-frame animations for props (blinking lights, moving machines...).
   const animators = [];
 
+  /**
+   * A small truck/van that drives a trail back and forth on the right-hand
+   * side, pausing at `stops` (metres along the trail). Visual only (no collider).
+   */
+  function patrol(route, { stops = [], cab = '#3c8c4a', box: boxColor = '#eef1f3', speed = 7 } = {}) {
+    const body = new THREE.Group();
+    const part = (w, hh, d, y, z, color) => {
+      const m = new THREE.Mesh(G.block(), material(color));
+      m.scale.set(w, hh, d);
+      m.position.set(0, y, z);
+      m.castShadow = true;
+      body.add(m);
+    };
+    part(2.4, 2.6, 4.4, 0.6, 1, boxColor);
+    part(2.3, 1.9, 1.6, 0.6, -2.6, cab);
+    part(2.5, 0.5, 6.2, 0.1, -0.2, '#2b2b2b');
+    setCharset(body, CHARSET.WALL);
+    scene.add(body);
+    const end = route.length - 4;
+    let s = 4, dir = 1, wait = 0;
+    animators.push(dt => {
+      if (wait > 0) wait -= dt;
+      else {
+        const next = stops.find(st => (dir > 0 ? st > s : st < s) && Math.abs(st - s) < 6);
+        const v = next !== undefined ? Math.max(1.5, Math.abs(next - s)) : speed;
+        const prev = s;
+        s += dir * Math.min(speed, v) * dt;
+        if (stops.some(st => (prev - st) * (s - st) <= 0 && prev !== st)) wait = 2.5; // stop at the bin
+        if (s > end || s < 4) { dir = -dir; s = Math.max(4, Math.min(end, s)); wait = 4; }
+      }
+      const p = pointAt(route.path, route.cum, s);
+      body.position.set(p.x - p.tz * 1.6 * dir, h(p.x, p.z), p.z + p.tx * 1.6 * dir); // keep right
+      body.rotation.y = Math.atan2(-p.tx * dir, -p.tz * dir); // cab (local −z) leads
+    });
+    return body;
+  }
+
   // --- Career 1: KETI research campus ------------------------------------------------
   // Watch-face plaza (hour markers, hands that follow the in-game clock), glass
   // lab blocks to the north, an antenna mast and a heart-rate board.
@@ -869,38 +906,7 @@ export function buildWorld(scene, map) {
       }
 
       // A collection truck drives the route, stopping at each bin.
-      {
-        const body = new THREE.Group();
-        const part = (w, hh, d, y, z, color) => {
-          const m = new THREE.Mesh(G.block(), material(color));
-          m.scale.set(w, hh, d);
-          m.position.set(0, y, z);
-          m.castShadow = true;
-          body.add(m);
-        };
-        part(2.4, 2.6, 4.4, 0.6, 1, '#eef1f3');
-        part(2.3, 1.9, 1.6, 0.6, -2.6, '#3c8c4a');
-        part(2.5, 0.5, 6.2, 0.1, -0.2, '#2b2b2b');
-        setCharset(body, CHARSET.WALL);
-        scene.add(body);
-        const stops = [70, 140, 210, 280, 340];
-        const end = route.length - 4;
-        let s = 4, dir = 1, wait = 0;
-        animators.push(dt => {
-          if (wait > 0) wait -= dt;
-          else {
-            const next = stops.find(st => (dir > 0 ? st > s : st < s) && Math.abs(st - s) < 6);
-            const speed = next !== undefined ? Math.max(1.5, Math.abs(next - s)) : 7;
-            const prev = s;
-            s += dir * Math.min(7, speed) * dt;
-            if (stops.some(st => (prev - st) * (s - st) <= 0 && prev !== st)) wait = 2.5; // stop at the bin
-            if (s > end || s < 4) { dir = -dir; s = Math.max(4, Math.min(end, s)); wait = 4; }
-          }
-          const p = pointAt(route.path, route.cum, s);
-          body.position.set(p.x - p.tz * 1.6 * dir, h(p.x, p.z), p.z + p.tx * 1.6 * dir); // keep right
-          body.rotation.y = Math.atan2(-p.tx * dir, -p.tz * dir); // cab (local −z) leads
-        });
-      }
+      patrol(route, { stops: [70, 140, 210, 280, 340], cab: '#3c8c4a', box: '#eef1f3' });
     }
   }
 
@@ -927,8 +933,20 @@ export function buildWorld(scene, map) {
         for (const dx of [-4, 4]) {
           const ax = px + dx, az = bz - 2.2;
           put(G.cylinder(), '#ff8c42', CHARSET.GOLD, ax, by, az, 0.55, 0.8, 0.55);
-          put(G.block(), '#ff8c42', CHARSET.GOLD, ax, by + 0.8, az + 0.6, 0.35, 2.6, 0.35, { rx: 0.45 });
-          put(G.block(), '#ff8c42', CHARSET.GOLD, ax, by + 3.0, az + 1.7, 0.3, 1.8, 0.3, { rx: 1.9 });
+          // Arm: a turning group (upper arm + forearm) that swings over the belt.
+          const arm = new THREE.Group();
+          const seg = (w, hh, d, x, y, z, rx) => {
+            const m = new THREE.Mesh(G.block(), material('#ff8c42'));
+            m.scale.set(w, hh, d); m.position.set(x, y, z); m.rotation.x = rx; m.castShadow = true;
+            arm.add(m);
+          };
+          seg(0.35, 2.6, 0.35, 0, 0, 0.0, 0.45);
+          seg(0.3, 1.8, 0.3, 0, 2.3, 1.1, 1.9);
+          arm.position.set(ax, by + 0.8, az);
+          setCharset(arm, CHARSET.GOLD);
+          scene.add(arm);
+          const phase = dx;
+          animators.push((dt, t) => { arm.rotation.y = Math.sin(t * 0.9 + phase) * 1.1; });
           solid(circle(ax, az, 0.6, 3.5, by));
         }
       }
@@ -942,6 +960,55 @@ export function buildWorld(scene, map) {
         solid(circle(fx, fz, 1.2, 3.3, fy));
       }
     }
+    if (zm) {
+      const [mx, mz] = zm.pos;
+      // Greenhouses (glass half-barrels) beside the lavender.
+      for (const [gx, gz] of [[214, 30], [214, 118], [236, 118]]) {
+        if (!boxClear(gx, gz, 16, 8, 0, 1)) continue;
+        const gy = h(gx, gz);
+        put(G.cylinder(), '#cfe8f0', CHARSET.ROOF, gx - 8, gy, gz, 3.8, 16, 3.8, { rz: -Math.PI / 2 });
+        put(G.block(), '#9fc4d8', CHARSET.WALL, gx, gy, gz, 16, 0.4, 7.8, { shadow: false });
+        solid(box(gx, gz, 8, 3.9, 0, 3.8, gy));
+      }
+      // Distillation tanks with cone tops, joined by a pipe.
+      const tanks = [];
+      for (let i = 0; i < 3; i++) {
+        const tx = mx + 41 + i * 5, tz = mz + 30;
+        if (!isClear(tx, tz, 2.2, 1)) continue;
+        const ty = h(tx, tz);
+        put(G.cylinder(), '#d9dee3', CHARSET.WALL, tx, ty, tz, 1.8, 7, 1.8);
+        put(G.cone(), '#b9c0c8', CHARSET.ROOF, tx, ty + 7, tz, 1.8, 1.4, 1.8);
+        solid(circle(tx, tz, 1.9, 8.4, ty));
+        tanks.push([tx, tz, ty]);
+      }
+      if (tanks.length > 1) {
+        const [a0, , ay] = tanks[0], [a1] = tanks[tanks.length - 1];
+        put(G.cylinder(), '#9aa3ad', CHARSET.WALL, a0, ay + 5, tanks[0][1], 0.25, a1 - a0, 0.25, { rz: -Math.PI / 2 });
+      }
+      // AI & DX server room: dark block with blinking status strips.
+      {
+        const sx = mx + 22, sz = mz + 56;
+        if (boxClear(sx, sz, 8, 5, 0, 1)) {
+          const sy = h(sx, sz);
+          put(G.block(), '#1d2127', CHARSET.WALL, sx, sy - 0.3, sz, 8, 4.3, 5, { cut: true });
+          solid(box(sx, sz, 4, 2.5, 0, 4, sy - 0.3));
+          const leds = [0, 1, 2, 3].map(i => {
+            const m = new THREE.MeshStandardMaterial({ color: '#0b1a12', emissive: i % 2 ? '#48cae4' : '#5dff8a', emissiveIntensity: 1 });
+            const led = new THREE.Mesh(G.block(), m);
+            led.scale.set(1.2, 0.25, 0.08);
+            led.position.set(sx - 2.4 + i * 1.6, sy + 2.4, sz - 2.56);
+            setCharset(led, CHARSET.GOLD);
+            scene.add(led);
+            return m;
+          });
+          animators.push((dt, t) => leds.forEach((m, i) => { m.emissiveIntensity = Math.sin(t * (3 + i * 1.7) + i) > 0.2 ? 1.8 : 0.15; }));
+        }
+      }
+      // A delivery van shuttles along the plant road.
+      const film = trail('film');
+      if (film) patrol(film, { cab: '#b38cff', box: '#f3f5f7', speed: 9 });
+    }
+
     // Conveyor slats across the road on boost strips (flat, bright).
     for (const b of map.boosts ?? []) {
       const tr = trail(b.trail);

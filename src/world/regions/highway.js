@@ -56,7 +56,7 @@ export default {
     { rect: [235, -215, 365, -70], yaw: 0.35, spacing: 3 },
     { rect: [250, -72, 330, -42], yaw: 0.1, spacing: 3 },
     { rect: [360, 55, 470, 150], yaw: -0.25, spacing: 3 },
-    { rect: [275, 105, 380, 190], yaw: 0.15, spacing: 3 },
+    // (The block south of the road is now Moisten's flower fields.)
   ],
   scatter: [
     { kind: 'cypress', rect: [205, -330, 470, 240], count: 220, seed: 81, clearance: 8 },

@@ -154,7 +154,7 @@ function place() {
   // Career places, then outer regions (see src/world/regions/*), then home.
   if (x > 0 && x < 176 && zz > -116 && zz < -46) return '~/career/keti';
   if (x > 425 && x < 512 && zz > 318 && zz < 525) return '~/career/zero-one';
-  if (x > 192 && x < 420 && zz > 38 && zz < 130) return '~/career/moisten';
+  if (x > 192 && x < 420 && zz > 38 && zz < 195) return '~/career/moisten';
   if (zz > 235 && x > -290 && x < 370) return '~/grand-prix';
   if (x < -280 && zz > 180) return '~/desert';
   if (x < -200 && zz < -250) return '~/snow';
