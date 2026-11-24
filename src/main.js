@@ -354,7 +354,6 @@ const loop = createLoop({
     perf.begin();
     if (settings.get('quality') === 'auto') quality.frame(dt);
     car.sync(vehicle, alpha, dt);
-    traffic.render(alpha, look.lights);
     if (rig.inOverview) {
       const it = devIntents ?? readIntents(input.state);
       if (it.throttle || it.brake || it.steer || Math.abs(vehicle.speed) > 2) rig.overview(null);
@@ -395,6 +394,7 @@ const loop = createLoop({
     }
     particles.update(dt);
     audio.update(dt, vehicle, (devIntents ?? readIntents(input.state)).throttle);
+    traffic.render(alpha, look.lights, rig.focus);
     lighting.follow(rig.focus); // shadows stay sharp around what the view is about
 
     camera.updateMatrixWorld();

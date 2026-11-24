@@ -3,6 +3,7 @@ import { CHARSET, setCharset } from '../render/charsets.js';
 import { shapes } from '../vehicle/models.js';
 import { pointAt } from '../world/path.js';
 import { box } from '../physics/shapes.js';
+import { groundLight, MAX_BEAMS } from '../render/groundLight.js';
 
 /**
  * Traffic: ordinary cars that drive the public tarmac roads, keeping to the
@@ -146,6 +147,9 @@ const rng = seed => () => {
   return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 };
 const wrap = a => Math.atan2(Math.sin(a), Math.cos(a));
+
+const BEAM_RANGE = 130; // m from the camera's focus within which a car's headlights are drawn
+const near = [];
 
 export function createTraffic({ scene, terrain, physics, patrols = [], bus, seed = 11, density = 1 }) {
   const rand = rng(seed);
@@ -322,13 +326,34 @@ export function createTraffic({ scene, terrain, physics, patrols = [], bus, seed
       player.dim.hx = 1; player.dim.hz = v.car.wheelbase / 2 + 0.9;
       for (const car of cars) drive(car, dt, closedTrail);
     },
-    /** Per frame: interpolated poses; lenses follow the time of day. */
-    render(alpha, lights = 0) {
+    /**
+     * Per frame: interpolated poses; after dusk the lenses glow and the cars
+     * nearest to `focus` (what the camera looks at) light the road ahead.
+     */
+    render(alpha, lights = 0, focus = null) {
       glow.value = lights * 1.8;
       for (const car of cars) {
         if (car.hidden) continue;
         car.obj.position.set(car.px + (car.x - car.px) * alpha, car.py + (car.y - car.py) * alpha, car.pz + (car.z - car.pz) * alpha);
         car.obj.rotation.set(car.ppitch + (car.pitch - car.ppitch) * alpha, car.pyaw + wrap(car.yaw - car.pyaw) * alpha, -(car.proll + (car.roll - car.proll) * alpha));
+      }
+      // Headlight beams (shader cones): only a few exist, so they go to the
+      // nearest cars and fade out with distance rather than popping.
+      const K = groundLight.uBeamK.value, B = groundLight.uBeams.value;
+      K.fill(0);
+      if (lights <= 0.02 || !focus) return;
+      near.length = 0;
+      for (const car of cars) {
+        if (car.hidden) continue;
+        car.far = Math.hypot(car.obj.position.x - focus.x, car.obj.position.z - focus.z);
+        if (car.far < BEAM_RANGE) near.push(car);
+      }
+      near.sort((a, b) => a.far - b.far);
+      for (let i = 0; i < Math.min(MAX_BEAMS, near.length); i++) {
+        const car = near[i], yaw = car.obj.rotation.y;
+        const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
+        B[i].set(car.obj.position.x + fx * car.dim.hz, car.obj.position.z + fz * car.dim.hz, fx, fz);
+        K[i] = lights * 0.9 * Math.min(1, (BEAM_RANGE - car.far) / 30);
       }
     },
   };
