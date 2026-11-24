@@ -812,6 +812,95 @@ export function buildWorld(scene, map) {
       };
       truck(zd.pos[0] - 6, zd.pos[1] + 24, 0);
       truck(zd.pos[0] + 2, zd.pos[1] + 24, 0);
+
+      const [dx0, dz0] = zd.pos;
+      // Open shed over the reducer row: four posts and a roof.
+      {
+        const sx = dx0 + 19, sz = dz0, sy = h(sx, sz);
+        for (const [ox, oz] of [[-3.5, -12], [3.5, -12], [-3.5, 12], [3.5, 12]]) {
+          if (!isClear(sx + ox, sz + oz, 0.4, 0.8)) continue;
+          put(G.block(), '#6b7684', CHARSET.WALL, sx + ox, h(sx + ox, sz + oz), sz + oz, 0.4, 5.6, 0.4);
+          solid(circle(sx + ox, sz + oz, 0.3, 5.6, h(sx + ox, sz + oz)));
+        }
+        put(G.block(), '#9aa3ad', CHARSET.ROOF, sx, sy + 5.6, sz, 8.6, 0.35, 25.4, { cut: true });
+      }
+      // Compost output: a low mound and sacks on pallets by the shed's south end.
+      {
+        const mx = dx0 + 19, mz = dz0 + 18;
+        if (isClear(mx, mz, 3.5, 1)) {
+          const my = h(mx, mz);
+          put(G.ball(), '#5a4030', CHARSET.DIRT, mx, my, mz, 3.4, 1.4, 2.8, { shadow: false });
+          for (const ox of [-4.5, 4.5]) {
+            if (!isClear(mx + ox, mz, 1.2, 0.8)) continue;
+            put(G.block(), '#a07a4a', CHARSET.WOOD, mx + ox, my, mz, 1.6, 0.25, 1.4);
+            put(G.block(), '#e8dcc0', CHARSET.WALL, mx + ox, my + 0.25, mz, 1.4, 0.9, 1.2);
+            solid(circle(mx + ox, mz, 0.9, 1.2, my));
+          }
+          solid(circle(mx, mz, 2.6, 1.3, my));
+        }
+      }
+      // Sorting bins in a row by the yard (colour per stream).
+      {
+        const colors = ['#3c8c4a', '#2f6fb5', '#e0b030', '#8a8f96', '#a0522d'];
+        for (let i = 0; i < colors.length; i++) {
+          const bx = dx0 - 12 + i * 1.6, bz = dz0 + 10;
+          if (!isClear(bx, bz, 0.6, 0.8)) continue;
+          const by = h(bx, bz);
+          put(G.block(), colors[i], CHARSET.WALL, bx, by, bz, 1.1, 1.2, 1.1);
+          solid(circle(bx, bz, 0.6, 1.2, by));
+        }
+      }
+      // Yard fence: posts and rails round the depot; gaps appear wherever a
+      // road or a building is in the way.
+      {
+        const [x0, z0, x1, z1] = [dx0 - 24, dz0 - 26, dx0 + 26, dz0 + 32];
+        const edge = (ax, az, bx, bz) => {
+          const len = Math.hypot(bx - ax, bz - az), n = Math.floor(len / 3);
+          for (let i = 0; i <= n; i++) {
+            const x = ax + (bx - ax) * i / n, z = az + (bz - az) * i / n;
+            if (!isClear(x, z, 0.3, 1.2)) continue;
+            const y = h(x, z);
+            put(G.block(), '#8a8f96', CHARSET.WALL, x, y, z, 0.18, 1.6, 0.18, { shadow: false });
+            put(G.block(), '#aab3c2', CHARSET.WALL, x, y + 1.25, z, bx !== ax ? 3 : 0.1, 0.1, bz !== az ? 3 : 0.1, { shadow: false });
+            solid(circle(x, z, 0.2, 1.6, y));
+          }
+        };
+        edge(x0, z0, x1, z0); edge(x1, z0, x1, z1); edge(x1, z1, x0, z1); edge(x0, z1, x0, z0);
+      }
+
+      // A collection truck drives the route, stopping at each bin.
+      {
+        const body = new THREE.Group();
+        const part = (w, hh, d, y, z, color) => {
+          const m = new THREE.Mesh(G.block(), material(color));
+          m.scale.set(w, hh, d);
+          m.position.set(0, y, z);
+          m.castShadow = true;
+          body.add(m);
+        };
+        part(2.4, 2.6, 4.4, 0.6, 1, '#eef1f3');
+        part(2.3, 1.9, 1.6, 0.6, -2.6, '#3c8c4a');
+        part(2.5, 0.5, 6.2, 0.1, -0.2, '#2b2b2b');
+        setCharset(body, CHARSET.WALL);
+        scene.add(body);
+        const stops = [70, 140, 210, 280, 340];
+        const end = route.length - 4;
+        let s = 4, dir = 1, wait = 0;
+        animators.push(dt => {
+          if (wait > 0) wait -= dt;
+          else {
+            const next = stops.find(st => (dir > 0 ? st > s : st < s) && Math.abs(st - s) < 6);
+            const speed = next !== undefined ? Math.max(1.5, Math.abs(next - s)) : 7;
+            const prev = s;
+            s += dir * Math.min(7, speed) * dt;
+            if (stops.some(st => (prev - st) * (s - st) <= 0 && prev !== st)) wait = 2.5; // stop at the bin
+            if (s > end || s < 4) { dir = -dir; s = Math.max(4, Math.min(end, s)); wait = 4; }
+          }
+          const p = pointAt(route.path, route.cum, s);
+          body.position.set(p.x - p.tz * 1.6 * dir, h(p.x, p.z), p.z + p.tx * 1.6 * dir); // keep right
+          body.rotation.y = Math.atan2(-p.tx * dir, -p.tz * dir); // cab (local −z) leads
+        });
+      }
     }
   }
 
