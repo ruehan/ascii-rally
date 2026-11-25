@@ -2,7 +2,7 @@
  * Portfolio content — the one file to edit.
  *
  * Text can be a plain string (same in both languages) or `{ en, ko }`.
- * Everything marked TODO is a placeholder. Panels are plain data:
+ * Panels are plain data:
  *   { title, lines: [ text | { k, v } | { h } | { link, href } ] }
  *   - text       a paragraph line
  *   - { h }      a section heading
@@ -10,16 +10,19 @@
  *   - { link, href } a link
  */
 
+const SITE = 'https://hangyu-field-notes.vercel.app'; // the long-form portfolio (case studies, notes)
+
 export const owner = {
-  name: 'TODO Your Name',
-  handle: 'guest',
-  role: { en: 'Software developer', ko: '소프트웨어 개발자' },
+  name: 'Han Gyu',
+  handle: 'guest', // shown in the prompt: the visitor is a guest on this stage
+  role: { en: 'Full-stack developer & AI researcher', ko: '풀스택 개발자 & AI 연구자' },
+  base: { en: 'Cheongju, South Korea', ko: '청주, 대한민국' },
+  email: 'ruehan98@gmail.com',
+  github: 'https://github.com/ruehan',
+  site: SITE,
 };
 
-const todo = { en: 'TODO', ko: 'TODO' };
-const todoSummary = { en: 'TODO: one or two sentences about what it is and why it matters.', ko: 'TODO: 무엇이고 왜 중요한지 한두 문장.' };
-
-/** Projects shown at the end of each special stage (ids used in map.js stages). */
+/** Projects shown at the end of a special stage (ids used in map.js stages). */
 export const projects = {
   p1: {
     title: 'stage ~/',
@@ -31,19 +34,14 @@ export const projects = {
       { en: 'a GPU shader turns a 3D world into glyphs, with edge characters,', ko: 'GPU 셰이더가 3D 월드를 문자로 바꾸고, 윤곽 문자와' },
       { en: 'per-material charsets and contour lines on the terrain.', ko: '재질별 문자 세트, 지형 등고선을 그립니다.' },
     ],
-    links: [{ link: { en: 'source', ko: '소스' }, href: '#' }],
+    links: [{ link: { en: 'source — github.com/ruehan/ascii-rally', ko: '소스 — github.com/ruehan/ascii-rally' }, href: 'https://github.com/ruehan/ascii-rally' }],
   },
-  p2: { title: 'TODO project two', year: 'TODO', role: todo, stack: 'TODO', summary: [todoSummary], links: [] },
-  p3: { title: 'TODO project three', year: 'TODO', role: todo, stack: 'TODO', summary: [todoSummary], links: [] },
-  p4: { title: 'TODO project four', year: 'TODO', role: todo, stack: 'TODO', summary: ['TODO'], links: [] },
-  p5: { title: 'TODO project five', year: 'TODO', role: todo, stack: 'TODO', summary: ['TODO'], links: [] },
-  p6: { title: 'TODO project six', year: 'TODO', role: todo, stack: 'TODO', summary: ['TODO'], links: [] },
 };
 
 /**
- * Careers: each has its own region and stage in the world (stage config
- * `career: '<id>'`); finishing the stage shows this card. Text is plain or
- * { en, ko }.
+ * Careers: each has its own region in the world (zone config
+ * `career: '<id>'`); stopping on its pad shows this card. Text is plain or
+ * { en, ko }. `stack` is optional (the row is left out when empty).
  */
 export const careers = {
   keti: {
@@ -51,25 +49,35 @@ export const careers = {
     short: 'KETI',
     role: { en: 'Researcher', ko: '연구원' },
     period: '2021.10 – 2023.03',
-    field: { en: 'Healthcare · wearable watch', ko: '헬스케어 · 웨어러블 워치' },
+    field: { en: 'Digital health · wearable sensing · vehicle voice AI', ko: '디지털 헬스케어 · 웨어러블 센싱 · 차량 음성 AI' },
+    stack: 'Python · Flask · K-NN · Android · IMU · Kalman filter · Bluetooth · STT APIs · OTA',
     summary: [
-      { en: 'Research and development on a healthcare wearable (watch).', ko: '헬스케어 웨어러블(워치) 연구 개발.' },
-      { en: 'TODO: what you built, measured or shipped.', ko: 'TODO: 만든 것, 측정한 것, 성과.' },
+      {
+        en: 'Intelligent Convergence SW Research Center: applied AI systems — wearable inertial sensing, vehicle voice recognition, and the services around them.',
+        ko: '지능융합SW연구센터에서 웨어러블 관성 센싱, 차량 음성 인식, 그리고 이를 뒷받침하는 서비스까지 응용 AI 시스템을 연구·개발했습니다.',
+      },
+      { h: { en: 'RESEARCH', ko: '연구' } },
+      { k: 'MOTION', v: { en: 'Real-time dumbbell exercise recognition from accelerometer signals (K-NN); 94.7–99.3% on four motions in controlled tests', ko: '덤벨 가속도 신호로 운동 동작을 실시간 인식 (K-NN). 통제 실험의 4개 동작에서 94.7–99.3%' } },
+      { k: 'GAIT', v: { en: 'Walking distance and pace from a wrist-worn IMU, no GPS or leg sensors; Kalman filter + gravity compensation', ko: 'GPS나 다리 센서 없이 손목 IMU로 보행 거리·속도 추정. 칼만 필터 + 중력 보정' } },
+      { k: 'VOICE', v: { en: 'Vehicle voice platform: compares several STT results, learns per device, returns a personal model over the air', ko: '차량 음성 플랫폼: 여러 STT 결과를 비교하고, 차량별로 학습해 개인화 모델을 OTA로 전달' } },
+      { en: 'Three conference papers (KICS, 2022).', ko: '학술대회 논문 3편 (KICS, 2022).' },
     ],
-    stack: 'TODO',
-    links: [],
+    links: [
+      { link: { en: 'case — Motion Feedback ↗', ko: '사례 — Motion Feedback ↗' }, href: `${SITE}/projects/aether` },
+      { link: { en: 'case — Gait Measured ↗', ko: '사례 — Gait Measured ↗' }, href: `${SITE}/projects/atlas` },
+      { link: { en: 'case — Voice Updated ↗', ko: '사례 — Voice Updated ↗' }, href: `${SITE}/projects/relay` },
+    ],
   },
   zeroone: {
     company: { en: 'Zero One Co., Ltd.', ko: '주식회사 제로원' },
     short: { en: 'Zero One', ko: '제로원' },
-    role: { en: 'SW Team Lead', ko: 'SW팀장' },
+    role: { en: 'Team Lead, Software Development', ko: 'SW팀장' },
     period: '2025.04 – 2026.10',
     field: { en: 'Food-waste reducers · collection service', ko: '음식물 감량기 · 수거 서비스' },
     summary: [
-      { en: 'Built the company\'s overall software system: reducer machines and the collection service.', ko: '감량기와 음식물 수거 서비스를 아우르는 전반적인 시스템 구축.' },
-      { en: 'TODO: team, architecture, results.', ko: 'TODO: 팀, 구조, 성과.' },
+      { en: 'Led software development and delivery as team lead, connecting product needs with implementation.', ko: '팀장으로서 SW 개발과 제품의 구현·전달을 이끌며, 제품 요구를 실제 구현으로 연결했습니다.' },
+      { en: 'Built the company\'s overall software system: the reducer machines and the food-waste collection service.', ko: '감량기와 음식물 수거 서비스를 아우르는 전반적인 시스템을 구축했습니다.' },
     ],
-    stack: 'TODO',
     links: [],
   },
   moisten: {
@@ -79,21 +87,20 @@ export const careers = {
     period: { en: '2026.11 – now', ko: '2026.11 – 현재' },
     field: { en: 'Cosmetics · ODF film', ko: '화장품 · ODF 필름' },
     summary: [
-      { en: 'Building company-wide systems and automation (AI & DX).', ko: '전반적인 시스템 구축 및 자동화 (AI & DX).' },
-      { en: 'TODO: current focus.', ko: 'TODO: 지금 집중하는 일.' },
+      { en: 'Building company-wide systems and automation (AI & DX).', ko: '전반적인 시스템 구축과 자동화를 맡고 있습니다 (AI & DX).' },
     ],
-    stack: 'TODO',
     links: [],
   },
 };
 
 /**
- * Career milestones along the 24H loop, in order (first = afternoon start,
- * last = back to the paddock next day). `at` (0..1 of the lap) is optional.
+ * Milestones along the 24H loop, in order (first = afternoon start, last =
+ * back to the paddock next day). `at` (0..1 of the lap) is optional.
  */
 export const milestones = [
-  { year: 'TODO', title: { en: 'First line of code', ko: '첫 코드 한 줄' }, text: { en: 'TODO: where it started.', ko: 'TODO: 어디서 시작했는지.' } },
   { year: '2021.10', title: { en: 'Researcher · KETI', ko: 'KETI 연구원' }, text: careers.keti.field },
+  { year: '2022', title: { en: 'Three papers · KICS', ko: 'KICS 논문 3편' }, text: { en: 'Motion recognition · gait estimation · vehicle voice OTA', ko: '동작 인식 · 보행 추정 · 차량 음성 OTA' } },
+  { year: '2024', title: { en: 'Walk, Together', ko: 'Walk, Together' }, text: { en: 'Frontend lead · location-based dog-walking service', ko: '프론트엔드 팀장 · 위치 기반 반려견 산책 서비스' } },
   { year: '2025.04', title: { en: 'SW Team Lead · Zero One', ko: '제로원 SW팀장' }, text: careers.zeroone.field },
   { year: '2026.11', title: { en: 'AI & DX · Moisten', ko: '모이스텐 AI & DX' }, text: careers.moisten.field },
   { year: { en: 'NOW', ko: '지금' }, title: { en: 'Next stage loading', ko: '다음 스테이지 준비 중' }, text: { en: 'Back at the paddock.', ko: '다시 패독으로.' } },
@@ -131,31 +138,45 @@ export const panels = {
     lines: [
       { k: { en: 'DRIVER', ko: '드라이버' }, v: owner.name },
       { k: { en: 'ROLE', ko: '역할' }, v: owner.role },
-      { k: { en: 'BASE', ko: '거점' }, v: { en: 'TODO city', ko: 'TODO 도시' } },
+      { k: { en: 'BASE', ko: '거점' }, v: owner.base },
       { h: { en: 'ABOUT', ko: '소개' } },
-      { en: 'TODO: a few lines about you — what you build, what you care about.', ko: 'TODO: 무엇을 만들고 무엇을 중요하게 여기는지 몇 줄.' },
-      { h: { en: 'OFF THE CLOCK', ko: '쉬는 시간엔' } },
-      { en: 'Motorsport: F1, endurance racing, rally, hot hatches.', ko: '모터스포츠: F1, 내구 레이스, 랠리, 핫해치.' },
+      {
+        en: 'I build AI-enabled systems across digital health, wearable sensing and connected mobility — the model, the service under it and the interface a person actually uses.',
+        ko: '디지털 헬스케어, 웨어러블 센싱, 커넥티드 모빌리티 분야에서 AI 기반 시스템을 설계·구현합니다. 모델과 그 아래의 서비스, 사람이 실제로 쓰는 인터페이스까지 함께 만듭니다.',
+      },
+      {
+        en: 'I am drawn to the point where a technical system meets a person\'s judgement.',
+        ko: '기술 시스템이 사람의 판단과 만나는 지점에 관심이 있습니다.',
+      },
+      { h: { en: 'HOW I WORK', ko: '일하는 원칙' } },
+      { k: '01', v: { en: 'Evidence before certainty', ko: '확신보다 근거' } },
+      { k: '02', v: { en: 'Make the route editable', ko: '다시 판단할 수 있게' } },
+      { k: '03', v: { en: 'Build for the next question', ko: '다음 질문을 위해 만들기' } },
+      { h: { en: 'ALSO BUILT', ko: '그 밖에 만든 것' } },
+      { k: 'WALK', v: { en: 'Walk, Together (2024) — location-based dog-walking service; frontend lead · React · TypeScript', ko: 'Walk, Together (2024) — 위치 기반 반려견 산책 서비스. 프론트엔드 팀장 · React · TypeScript' } },
+      { k: 'BIO', v: { en: 'Bio Acoustic — process proposal: food-waste byproducts into a bio-based acoustic panel', ko: 'Bio Acoustic — 음식물 부산물을 바이오 기반 흡음 패널로 만드는 공정 제안' } },
+      { k: 'WORKOS', v: { en: 'R&D WorkOS (in development) — one workspace for research projects, experiments, samples and documents · Next.js', ko: 'R&D WorkOS (개발 중) — 연구 프로젝트·실험·시료·문서를 잇는 워크스페이스 · Next.js' } },
+      { link: { en: 'field notes — case studies and essays ↗', ko: '필드 노트 — 사례 연구와 글 ↗' }, href: owner.site },
     ],
   },
   skills: {
     title: '$ cat setup-sheet.txt',
     lines: [
       { h: { en: 'CAR SETUP', ko: '세팅 시트' } },
-      { k: { en: 'ENGINE', ko: '엔진' }, v: { en: 'TODO main language', ko: 'TODO 주 언어' } },
-      { k: { en: 'CHASSIS', ko: '섀시' }, v: { en: 'TODO main framework', ko: 'TODO 주 프레임워크' } },
-      { k: { en: 'GEARBOX', ko: '변속기' }, v: { en: 'TODO build / tooling', ko: 'TODO 빌드 / 도구' } },
-      { k: { en: 'SUSPENSION', ko: '서스펜션' }, v: { en: 'TODO testing / quality', ko: 'TODO 테스트 / 품질' } },
-      { k: { en: 'TYRES', ko: '타이어' }, v: { en: 'TODO infra / deploy', ko: 'TODO 인프라 / 배포' } },
+      { k: { en: 'ENGINE', ko: '엔진' }, v: { en: 'Python — AI, research, data processing', ko: 'Python — AI, 연구, 데이터 처리' } },
+      { k: { en: 'CHASSIS', ko: '섀시' }, v: 'React · Next.js · TypeScript' },
+      { k: { en: 'GEARBOX', ko: '변속기' }, v: 'FastAPI · Flask · SQL' },
+      { k: { en: 'SUSPENSION', ko: '서스펜션' }, v: { en: 'Signal processing — IMU, Kalman filter', ko: '신호 처리 — IMU, 칼만 필터' } },
+      { k: { en: 'TYRES', ko: '타이어' }, v: { en: 'Computer vision · motion recognition', ko: '컴퓨터 비전 · 동작 인식' } },
       { k: { en: 'AERO', ko: '공력' }, v: 'Three.js · GLSL' },
     ],
   },
   contact: {
     title: { en: '> box box — let\'s talk', ko: '> 박스 박스 — 이야기해요' },
     lines: [
-      { k: { en: 'RADIO', ko: '무전' }, v: { en: 'TODO email', ko: 'TODO 이메일' } },
-      { link: 'TELEMETRY  github.com/TODO', href: '#' },
-      { link: 'GRID       linkedin.com/in/TODO', href: '#' },
+      { k: { en: 'RADIO', ko: '무전' }, v: owner.email },
+      { link: 'TELEMETRY  github.com/ruehan ↗', href: owner.github },
+      { link: { en: 'PADDOCK    field notes (portfolio) ↗', ko: 'PADDOCK    필드 노트 (포트폴리오) ↗' }, href: owner.site },
     ],
   },
   // 'hq' is generated from stage times (see ui.js).

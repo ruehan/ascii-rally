@@ -51,7 +51,7 @@ function projectOf(stage) {
     return {
       kind: 'career', title: L(c.short), heading: t('result.career'),
       rows: [[t('result.k.company'), L(c.company)], [t('result.k.role'), L(c.role)], [t('result.k.period'), L(c.period)],
-        [t('result.k.field'), L(c.field)], [t('result.k.stack'), L(c.stack)]],
+        [t('result.k.field'), L(c.field)], ...(c.stack ? [[t('result.k.stack'), L(c.stack)]] : [])],
       summary: c.summary ?? [], links: c.links ?? [],
     };
   }
